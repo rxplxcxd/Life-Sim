@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infinity Life Sim - Multiplayer Text Adventure</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            inter: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            panel: '#0f172a',
+            panelSoft: '#1e293b',
+            neon: '#22d3ee',
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .tab-active { background: linear-gradient(90deg, #0891b2, #0ea5e9); color: #fff; }
+    .glass { backdrop-filter: blur(6px); background: rgba(15, 23, 42, 0.86); }
+    .scrollbar-thin::-webkit-scrollbar { width: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+    <header class="mb-4 sm:mb-6 flex flex-col gap-2">
+      <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">🌌 Infinity Life Sim</h1>
+      <p class="text-slate-400 text-sm sm:text-base">Massiver Multiplayer-Lebenssimulator mit Echtzeit-Welt, Wirtschaft und sozialer Dynamik.</p>
+    </header>
+
+    <section class="sticky top-2 z-40 rounded-xl border border-slate-700 glass p-3 sm:p-4 mb-4 shadow-xl">
+      <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 text-xs sm:text-sm" id="dashboardStats"></div>
+      <div class="mt-3 flex flex-wrap gap-2" id="quickActions">
+        <button data-action="ageUp" class="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs sm:text-sm font-semibold">+1 Jahr altern</button>
+        <button data-action="work" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold">Arbeiten</button>
+        <button data-action="study" class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold">Lernen</button>
+        <button data-action="invest" class="px-3 py-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs sm:text-sm font-semibold">Investieren</button>
+        <button data-action="crime" class="px-3 py-2 rounded-lg bg-rose-700 hover:bg-rose-600 text-white text-xs sm:text-sm font-semibold">Kriminelle Aktion</button>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="xl:col-span-2 space-y-4">
+        <div class="rounded-xl border border-slate-700 bg-panel p-3">
+          <div class="flex overflow-x-auto gap-2 pb-2 scrollbar-thin" id="tabs"></div>
+          <div class="mt-3" id="tabContent"></div>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 bg-panel p-3">
+          <h2 class="font-bold text-lg mb-2">📜 Lebens-Log</h2>
+          <div id="lifeLog" class="h-72 overflow-y-auto text-sm space-y-2 pr-2 scrollbar-thin"></div>
+        </div>
+      </div>
+
+      <aside class="space-y-4">
+        <div class="rounded-xl border border-slate-700 bg-panel p-3">
+          <h2 class="font-bold text-lg mb-2">🌍 Welt-Hub (Realtime Feed)</h2>
+          <div id="worldFeed" class="h-64 overflow-y-auto text-sm space-y-2 pr-2 scrollbar-thin"></div>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 bg-panel p-3">
+          <h2 class="font-bold text-lg mb-2">👥 Aktive Spieler</h2>
+          <div class="flex gap-2 mb-3">
+            <input id="playerSearch" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm" placeholder="Spieler suchen..." />
+            <button id="searchBtn" class="px-3 py-1 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-xs font-semibold">Suchen</button>
+          </div>
+          <div id="playerList" class="space-y-2 text-sm max-h-52 overflow-y-auto scrollbar-thin"></div>
+        </div>
+
+        <div class="rounded-xl border border-slate-700 bg-panel p-3">
+          <h2 class="font-bold text-lg mb-2">💹 Globaler Markt</h2>
+          <div id="marketView" class="text-sm space-y-2"></div>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <div class="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-700 bg-slate-900/95 px-3 py-1.5 overflow-hidden">
+    <div id="worldTicker" class="whitespace-nowrap text-xs text-slate-200"></div>
+  </div>
+
+  <script>
+    // ----------------------------------------------
+    // Supabase Setup (Platzhalter)
+    // Tabellen-Struktur (logisch):
+    // profiles(id, username, age, health, happiness, intelligence, looks, balance, social_status, location, stats_json, updated_at)
+    // world_events(id, player_id, event_type, content, payload_json, created_at)
+    // interactions(id, from_player, to_player, action_type, result, payload_json, created_at)
+    // ----------------------------------------------
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const supabase = (SUPABASE_URL.includes('YOUR_') || SUPABASE_ANON_KEY.includes('YOUR_'))
+      ? null
+      : window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const Data_Library = {
+      countries: {
+        Deutschland: {
+          iqBias: 6, wealthBias: 22000, healthcare: 12, corruption: 6, education: 10,
+          socialMobility: 0.72, startupClimate: 0.63, safetyNet: 0.84, crimeExposure: 0.24,
+          nutritionQuality: 0.79, housingPressure: 0.58, digitalAccess: 0.87, civicTrust: 0.71,
+          climateStress: 0.38, nepotism: 0.26, bureaucracy: 0.62, scholarshipRate: 0.56,
+        },
+        Japan: {
+          iqBias: 8, wealthBias: 26000, healthcare: 14, corruption: 4, education: 11,
+          socialMobility: 0.66, startupClimate: 0.58, safetyNet: 0.82, crimeExposure: 0.12,
+          nutritionQuality: 0.86, housingPressure: 0.74, digitalAccess: 0.93, civicTrust: 0.79,
+          climateStress: 0.45, nepotism: 0.18, bureaucracy: 0.67, scholarshipRate: 0.48,
+        },
+        Brasilien: {
+          iqBias: -2, wealthBias: 12000, healthcare: -4, corruption: 14, education: -3,
+          socialMobility: 0.42, startupClimate: 0.57, safetyNet: 0.37, crimeExposure: 0.63,
+          nutritionQuality: 0.61, housingPressure: 0.69, digitalAccess: 0.64, civicTrust: 0.41,
+          climateStress: 0.55, nepotism: 0.61, bureaucracy: 0.53, scholarshipRate: 0.34,
+        },
+        Nigeria: {
+          iqBias: -1, wealthBias: 6000, healthcare: -5, corruption: 15, education: -4,
+          socialMobility: 0.36, startupClimate: 0.52, safetyNet: 0.29, crimeExposure: 0.58,
+          nutritionQuality: 0.48, housingPressure: 0.66, digitalAccess: 0.53, civicTrust: 0.34,
+          climateStress: 0.61, nepotism: 0.64, bureaucracy: 0.49, scholarshipRate: 0.31,
+        },
+        USA: {
+          iqBias: 3, wealthBias: 35000, healthcare: 3, corruption: 7, education: 5,
+          socialMobility: 0.59, startupClimate: 0.82, safetyNet: 0.44, crimeExposure: 0.39,
+          nutritionQuality: 0.68, housingPressure: 0.77, digitalAccess: 0.9, civicTrust: 0.52,
+          climateStress: 0.41, nepotism: 0.37, bureaucracy: 0.39, scholarshipRate: 0.42,
+        },
+        Indien: {
+          iqBias: 1, wealthBias: 7000, healthcare: -2, corruption: 10, education: 2,
+          socialMobility: 0.47, startupClimate: 0.74, safetyNet: 0.33, crimeExposure: 0.44,
+          nutritionQuality: 0.57, housingPressure: 0.72, digitalAccess: 0.67, civicTrust: 0.46,
+          climateStress: 0.59, nepotism: 0.57, bureaucracy: 0.55, scholarshipRate: 0.5,
+        },
+        Norwegen: {
+          iqBias: 7, wealthBias: 40000, healthcare: 16, corruption: 2, education: 12,
+          socialMobility: 0.88, startupClimate: 0.69, safetyNet: 0.95, crimeExposure: 0.11,
+          nutritionQuality: 0.91, housingPressure: 0.62, digitalAccess: 0.92, civicTrust: 0.84,
+          climateStress: 0.48, nepotism: 0.14, bureaucracy: 0.58, scholarshipRate: 0.72,
+        },
+      },
+      lifeStageEvents: {
+        childhood: [
+          'Du wirst in ein bilinguales Vorschulprogramm aufgenommen.',
+          'Eine Zahnspange belastet dein Selbstbild für zwei Jahre.',
+          'Deine Oma bringt dir tägliches Schachspielen bei.',
+          'Du brichst dir beim Klettern den Arm und fällst in Sport aus.',
+          'Eine Nachhilfelehrerin entdeckt deine Leseschwäche frühzeitig.',
+          'Du gewinnst den Vorlesewettbewerb in deiner Grundschule.',
+          'Durch einen Umzug verlierst du deinen besten Freund.',
+          'Du lernst Programmieren mit einem alten Familienlaptop.',
+          'Ein Klassenprojekt über Umweltpolitik weckt Aktivismus in dir.',
+          'Du bekommst ein Stipendium für eine Privatschule.',
+          'Mobbing wegen deines Dialekts senkt vorübergehend dein Selbstwertgefühl.',
+          'Ein Musiklehrer gibt dir kostenlos Klavierunterricht.',
+          'Du organisierst einen Flohmarkt und verdienst dein erstes Geld.',
+          'Dein Fußballtrainer macht dich zum Teamkapitän.',
+          'Eine chronische Allergie beeinflusst deinen Alltag.',
+          'Du nimmst an einer Mathe-Olympiade teil und erreichst das Finale.',
+          'Ein Erdbeben in deiner Region führt zu längeren Schulausfällen.',
+          'Du wirst Patenschüler:in und unterstützt jüngere Kinder.',
+          'Ein Bibliotheksprojekt steigert deine Wissbegierde enorm.',
+          'Deine Eltern trennen sich, die Familiendynamik ändert sich.',
+          'Du baust mit Freunden ein kleines Robotik-Projekt.',
+          'Ein strenger Lehrer fördert Disziplin, aber mindert Kreativität.',
+          'Du erhältst Zugang zu einem Elite-Förderkurs für Naturwissenschaften.',
+          'Ein Online-Spiel führt dich an internationales Teamplay heran.',
+          'Du startest einen Nachbarschafts-Garten mit deiner Klasse.',
+          'Eine Sprachbarriere erschwert deinen Start an neuer Schule.',
+          'Du rettest ein Haustier und wirst lokal bekannt.',
+          'Häufige Krankheitstage bremsen deine schulischen Leistungen.',
+          'Ein Kunstwettbewerb eröffnet dir eine kreative Laufbahn.',
+          'Du lernst früh den Umgang mit Taschengeld und Budgetplänen.',
+          'Deine Familie eröffnet einen kleinen Laden, du hilfst regelmäßig aus.',
+          'Du bekommst einen Mentor aus einem Jugendförderprogramm.',
+          'Ein Cybermobbing-Vorfall zwingt dich zu digitaler Auszeit.',
+          'Du gewinnst ein Wissenschaftscamp im Ausland.',
+          'Ein lokales Hochwasser stärkt deinen Teamgeist in der Nachbarschaft.'
+        ],
+        youth: [
+          'Du bestehst die Aufnahmeprüfung einer technischen Oberstufe.',
+          'Eine erste Liebe motiviert dich zu besseren Noten.',
+          'Du verlierst ein Jahr durch langwierige Gesundheitsprobleme.',
+          'Du baust einen viralen Gaming-Kanal auf.',
+          'Ein Praktikum in einer Werkstatt weckt handwerkliche Leidenschaft.',
+          'Du fällst durch eine wichtige Abschlussprüfung und startest neu.',
+          'Du gründest mit Freunden ein Schülerunternehmen.',
+          'Leistungsdruck führt zu Schlafproblemen und Konzentrationsschwäche.',
+          'Du erhältst ein Auslandsstipendium für ein Schuljahr.',
+          'Eine Jugendwahlkampagne macht dich politisch sichtbar.',
+          'Du entwickelst eine App, die in deiner Schule genutzt wird.',
+          'Eine toxische Clique zieht dich in riskante Partynächte.',
+          'Du erlernst Trading-Grundlagen über einen Community-Workshop.',
+          'Ein E-Sport-Turnier bringt erste Sponsorverträge.',
+          'Du beginnst ehrenamtlich bei der Feuerwehr.',
+          'Ein peinlicher Skandal in Social Media kostet dich Reputation.',
+          'Deine Familie benötigt dein Einkommen, du arbeitest neben der Schule.',
+          'Ein Debattierclub verbessert deine Überzeugungskraft deutlich.',
+          'Du brichst eine Ausbildung ab und wechselst die Fachrichtung.',
+          'Ein Coding-Bootcamp beschleunigt deinen Karrierepfad.',
+          'Du gerätst in eine Szene mit kleinen Diebstählen.',
+          'Ein Musikprojekt schafft es in lokale Charts.',
+          'Du wirst Opfer eines Betrugs und lernst finanzielle Vorsicht.',
+          'Eine Fernbeziehung fordert deine emotionale Stabilität.',
+          'Du baust ein Netzwerk mit Unternehmer:innen aus deiner Stadt auf.',
+          'Ein Mentor vermittelt dir ein Top-Praktikum in der Finanzbranche.',
+          'Du scheiterst bei einem Influencer-Launch und verschuldest dich.',
+          'Ein Jugendhackathon bringt dir ein Preisgeld ein.',
+          'Du musst wegen Familienpflichten deine Pläne verschieben.',
+          'Ein Auslandssemester erweitert deinen kulturellen Horizont.',
+          'Du kommst mit der Polizei wegen Vandalismus in Kontakt.',
+          'Dein soziales Projekt gewinnt kommunale Förderung.',
+          'Ein neuer Freundeskreis stärkt deine mentale Gesundheit.',
+          'Du machst einen Führerschein und startest als Kurierfahrer:in.',
+          'Eine öffentliche Rede macht dich in deiner Region bekannt.'
+        ],
+        adult: [
+          'Du wechselst in einen besser bezahlten Branchenzweig.',
+          'Ein risikoreiches Start-up frisst deine Ersparnisse auf.',
+          'Du kaufst die erste Wohnung unter hoher Zinslast.',
+          'Eine Führungskräftefortbildung erhöht dein Prestige.',
+          'Du wirst Elternteil und ordnest dein Leben neu.',
+          'Ein Burnout zwingt dich in eine zwölfmonatige Auszeit.',
+          'Du gründest eine NGO und gewinnst gesellschaftlichen Einfluss.',
+          'Ein Börsencrash halbiert dein Portfolio über Nacht.',
+          'Du verlierst den Job durch Automatisierung.',
+          'Eine Erbschaft erlaubt dir den Neustart ohne Kredite.',
+          'Du wirst in einen Compliance-Skandal deiner Firma verwickelt.',
+          'Eine Weiterbildung in KI eröffnet dir internationale Angebote.',
+          'Deine Ehekrise beeinflusst Leistung und Gesundheitswerte.',
+          'Du steigst in Lokalpolitik ein und gewinnst Mandatsmacht.',
+          'Ein erfolgreicher Exit macht dich kurzfristig wohlhabend.',
+          'Du eröffnest ein Restaurant, kämpfst aber mit Inflation.',
+          'Ein Rechtsstreit bindet Kapital und Nerven über Jahre.',
+          'Du trittst als Branchenexpert:in im Fernsehen auf.',
+          'Ein Immobilienprojekt scheitert an Genehmigungen.',
+          'Dein Unternehmen expandiert in drei neue Städte.',
+          'Pflegeverantwortung für Angehörige reduziert deine Arbeitszeit.',
+          'Du wirst Opfer von Identitätsdiebstahl und Finanzbetrug.',
+          'Ein Jobangebot im Ausland stellt deine Familie vor eine Wahl.',
+          'Du entwickelst ein Patent und erhältst Lizenzzahlungen.',
+          'Eine langjährige Freundschaft zerbricht wegen Geldkonflikten.',
+          'Du wirst Betriebsrat und verbesserst Arbeitsbedingungen.',
+          'Ein Unfall führt zu langer Reha und Karrierepause.',
+          'Du baust einen erfolgreichen Online-Kurs auf.',
+          'Eine politische Krise belastet dein Geschäftsmodell massiv.',
+          'Du übernimmst ein Familienunternehmen in schwieriger Lage.'
+        ]
+      },
+      relationshipEvents: [
+        'Ein Date endet überraschend romantisch.',
+        'Vertrauensprobleme belasten eure Beziehung.',
+        'Ihr zieht zusammen und teilt Kosten.',
+        'Familienkonflikte erschweren eure Zukunft.',
+        'Ein spontaner Heiratsantrag verändert alles.'
+      ],
+      crimes: [
+        { id: 'pickpocket', text: 'Taschendiebstahl in der U-Bahn', risk: 0.18, reward: [50, 500] },
+        { id: 'bank_robbery', text: 'Banküberfall mit Crew', risk: 0.52, reward: [8000, 70000] },
+        { id: 'tax_fraud', text: 'Steuerbetrug über Scheinfirmen', risk: 0.34, reward: [2500, 30000] },
+        { id: 'cyber_heist', text: 'Krypto-Wallet-Hack', risk: 0.29, reward: [1000, 45000] },
+        { id: 'smuggling', text: 'Schmuggelgeschäft', risk: 0.42, reward: [5000, 65000] },
+        { id: 'identity_fraud_ring', text: 'Identitätsdiebstahl-Ring', risk: 0.37, reward: [1600, 26000] },
+        { id: 'cargo_hijack', text: 'Container-Hijacking im Hafen', risk: 0.48, reward: [9000, 54000] },
+        { id: 'deepfake_extortion', text: 'Deepfake-Erpressung', risk: 0.33, reward: [2200, 38000] },
+        { id: 'real_estate_bribery', text: 'Immobilien-Bestechung im Bauamt', risk: 0.44, reward: [6000, 41000] },
+        { id: 'insider_trading_cell', text: 'Insiderhandel mit Börsenzirkeln', risk: 0.41, reward: [5000, 47000] },
+        { id: 'darkweb_pharma', text: 'Darknet-Medikamentenhandel', risk: 0.46, reward: [7000, 52000] },
+        { id: 'crypto_rugpull', text: 'Krypto-Rugpull über Meme-Coins', risk: 0.39, reward: [2500, 60000] },
+        { id: 'election_manipulation', text: 'Digitale Wahlmanipulation', risk: 0.55, reward: [10000, 90000] },
+        { id: 'art_forgery', text: 'Kunstfälschung mit internationalem Netzwerk', risk: 0.36, reward: [4500, 36000] },
+        { id: 'hospital_billing_scam', text: 'Abrechnungsbetrug im Gesundheitssektor', risk: 0.32, reward: [2800, 33000] },
+        { id: 'passport_counterfeit', text: 'Passfälschung für Fluchtrouten', risk: 0.51, reward: [8500, 68000] },
+        { id: 'match_fixing', text: 'Sportwetten-Manipulation', risk: 0.35, reward: [3000, 29000] },
+        { id: 'ai_voice_scam', text: 'KI-Stimmenbetrug bei Familiennotfällen', risk: 0.28, reward: [900, 14000] },
+        { id: 'toxic_dumping', text: 'Illegale Entsorgung von Giftstoffen', risk: 0.47, reward: [6400, 48000] },
+        { id: 'union_racketeering', text: 'Erpressung über Scheingewerkschaften', risk: 0.43, reward: [5000, 39000] },
+        { id: 'airport_gold_loop', text: 'Goldschmuggel über Transitflüge', risk: 0.49, reward: [7400, 65000] },
+        { id: 'biometric_breach', text: 'Biometrie-Datenleck verkaufen', risk: 0.45, reward: [6800, 57000] },
+        { id: 'charity_diversion', text: 'Spendenumleitung über Fake-Stiftung', risk: 0.31, reward: [1700, 22000] },
+        { id: 'drone_contraband', text: 'Drohnenlieferung verbotener Ware', risk: 0.38, reward: [2600, 31000] },
+        { id: 'casino_chip_wash', text: 'Geldwäsche über Casino-Chips', risk: 0.4, reward: [4200, 43000] }
+      ],
+      // Hunderte IDs per Generator für "riesig" wirkende Datenbasis
+      jobs: [
+        ...Array.from({ length: 220 }, (_, i) => {
+          const tiers = ['Apprentice', 'Associate', 'Senior', 'Lead', 'Director', 'Elite'];
+          const tracks = ['Handwerk', 'Medizin', 'Tech', 'Politik', 'Media', 'Finanz', 'Sicherheit', 'Influencer'];
+          const tier = tiers[i % tiers.length];
+          const track = tracks[i % tracks.length];
+          return {
+            id: `job_${String(i + 1).padStart(3, '0')}`,
+            name: `${tier} ${track} Spezialist #${i + 1}`,
+            salary: 16000 + i * 950,
+            stress: 4 + (i % 12),
+            prestige: 2 + Math.floor(i / 20),
+            educationNeed: i % 16,
+          };
+        }),
+        { id: 'spec_job_001', name: 'Klinischer Neurochirurg', salary: 186000, stress: 13, prestige: 14, educationNeed: 16 },
+        { id: 'spec_job_002', name: 'Raumfahrt-Systemingenieur', salary: 152000, stress: 11, prestige: 13, educationNeed: 15 },
+        { id: 'spec_job_003', name: 'Forensischer Datenanalyst', salary: 102000, stress: 9, prestige: 10, educationNeed: 13 },
+        { id: 'spec_job_004', name: 'Biotech-Laborleiter', salary: 134000, stress: 10, prestige: 11, educationNeed: 14 },
+        { id: 'spec_job_005', name: 'Hochfrequenz-Trader', salary: 220000, stress: 14, prestige: 12, educationNeed: 14 },
+        { id: 'spec_job_006', name: 'Ethikbeauftragte KI-Systeme', salary: 98000, stress: 7, prestige: 9, educationNeed: 12 },
+        { id: 'spec_job_007', name: 'Diplomatischer Krisenverhandler', salary: 124000, stress: 12, prestige: 13, educationNeed: 13 },
+        { id: 'spec_job_008', name: 'Urban-Farming-Architekt', salary: 79000, stress: 7, prestige: 8, educationNeed: 11 },
+        { id: 'spec_job_009', name: 'Cyberabwehr-Einsatzleiter', salary: 141000, stress: 12, prestige: 11, educationNeed: 14 },
+        { id: 'spec_job_010', name: 'Luxus-Hotelmanager', salary: 91000, stress: 9, prestige: 9, educationNeed: 10 },
+        { id: 'spec_job_011', name: 'Notfallmediziner Luftrettung', salary: 118000, stress: 13, prestige: 12, educationNeed: 14 },
+        { id: 'spec_job_012', name: 'Quantenchip-Entwickler', salary: 173000, stress: 11, prestige: 13, educationNeed: 16 },
+        { id: 'spec_job_013', name: 'Klimarisiko-Versicherer', salary: 97000, stress: 8, prestige: 9, educationNeed: 12 },
+        { id: 'spec_job_014', name: 'Unterwasser-Schweißtechniker', salary: 88000, stress: 10, prestige: 8, educationNeed: 9 },
+        { id: 'spec_job_015', name: 'Börsenaufsicht-Ermittler', salary: 106000, stress: 9, prestige: 10, educationNeed: 13 },
+        { id: 'spec_job_016', name: 'Culinary-Research-Chef', salary: 74000, stress: 8, prestige: 8, educationNeed: 8 },
+        { id: 'spec_job_017', name: 'Influencer-Strategieberater', salary: 86000, stress: 8, prestige: 8, educationNeed: 7 },
+        { id: 'spec_job_018', name: 'Erneuerbare-Energien-Planer', salary: 93000, stress: 7, prestige: 9, educationNeed: 11 },
+        { id: 'spec_job_019', name: 'Gerichtspsychologe', salary: 101000, stress: 10, prestige: 10, educationNeed: 13 },
+        { id: 'spec_job_020', name: 'Krypto-Compliance-Manager', salary: 112000, stress: 9, prestige: 9, educationNeed: 12 },
+        { id: 'spec_job_021', name: 'E-Sport-Teamdirektor', salary: 83000, stress: 9, prestige: 8, educationNeed: 8 },
+        { id: 'spec_job_022', name: 'Schiffslogistik-Koordinator', salary: 76000, stress: 8, prestige: 7, educationNeed: 7 },
+        { id: 'spec_job_023', name: 'Satelliten-Datenkartograf', salary: 118000, stress: 9, prestige: 10, educationNeed: 12 },
+        { id: 'spec_job_024', name: 'Mikrofinanz-Programmleiter', salary: 72000, stress: 7, prestige: 8, educationNeed: 9 },
+        { id: 'spec_job_025', name: 'Hafen-Sicherheitsanalyst', salary: 69000, stress: 8, prestige: 7, educationNeed: 8 },
+        { id: 'spec_job_026', name: 'Forstbrand-Einsatzkoordinator', salary: 84000, stress: 11, prestige: 9, educationNeed: 9 },
+        { id: 'spec_job_027', name: 'Premium-Bauprojektleiter', salary: 121000, stress: 10, prestige: 10, educationNeed: 11 },
+        { id: 'spec_job_028', name: 'Historische-Restaurationsexpertin', salary: 67000, stress: 6, prestige: 8, educationNeed: 9 },
+        { id: 'spec_job_029', name: 'Luftverkehrs-Flussmanager', salary: 126000, stress: 12, prestige: 11, educationNeed: 13 },
+        { id: 'spec_job_030', name: 'Bioinformatik-Spezialist', salary: 137000, stress: 10, prestige: 11, educationNeed: 14 },
+        { id: 'spec_job_031', name: 'Stadtpolitischer Campaigner', salary: 78000, stress: 9, prestige: 8, educationNeed: 8 },
+        { id: 'spec_job_032', name: 'VR-Lernplattform-Designer', salary: 89000, stress: 7, prestige: 8, educationNeed: 10 },
+        { id: 'spec_job_033', name: 'Wasseraufbereitungs-Ingenieur', salary: 95000, stress: 8, prestige: 9, educationNeed: 11 },
+        { id: 'spec_job_034', name: 'Hochzeits-Eventkuratierung Elite', salary: 73000, stress: 8, prestige: 7, educationNeed: 7 },
+        { id: 'spec_job_035', name: 'Kultureller Stiftungsdirektor', salary: 99000, stress: 7, prestige: 10, educationNeed: 11 },
+        { id: 'spec_job_036', name: 'Nanomaterial-Forscher', salary: 162000, stress: 11, prestige: 13, educationNeed: 15 },
+        { id: 'spec_job_037', name: 'Globale Lieferkettenforensik', salary: 108000, stress: 9, prestige: 10, educationNeed: 12 },
+        { id: 'spec_job_038', name: 'Medienrecht-Spezialanwalt', salary: 174000, stress: 12, prestige: 12, educationNeed: 15 },
+        { id: 'spec_job_039', name: 'Pharma-Qualitätssicherungschef', salary: 119000, stress: 9, prestige: 10, educationNeed: 13 },
+        { id: 'spec_job_040', name: 'Autonome-Fahrzeug-Tester', salary: 94000, stress: 8, prestige: 9, educationNeed: 10 },
+        { id: 'spec_job_041', name: 'Diplomatischer Kulturattaché', salary: 92000, stress: 8, prestige: 10, educationNeed: 11 },
+        { id: 'spec_job_042', name: 'Energiehändler Strommärkte', salary: 148000, stress: 12, prestige: 11, educationNeed: 13 },
+        { id: 'spec_job_043', name: 'Telemedizin-Plattformleiter', salary: 113000, stress: 8, prestige: 10, educationNeed: 11 },
+        { id: 'spec_job_044', name: 'Verhaltensökonom im Staatsdienst', salary: 104000, stress: 8, prestige: 10, educationNeed: 12 },
+        { id: 'spec_job_045', name: 'Premium-Fahrzeugrestaurator', salary: 81000, stress: 7, prestige: 8, educationNeed: 8 },
+        { id: 'spec_job_046', name: 'Weltraumtourismus-Koordinator', salary: 131000, stress: 10, prestige: 12, educationNeed: 12 },
+        { id: 'spec_job_047', name: 'Ethical-Hacker-Ausbilder', salary: 97000, stress: 8, prestige: 9, educationNeed: 10 },
+        { id: 'spec_job_048', name: 'Präzisionslandwirtschaft-Analyst', salary: 88000, stress: 7, prestige: 8, educationNeed: 9 },
+        { id: 'spec_job_049', name: 'Krisenkommunikation-Chef', salary: 109000, stress: 10, prestige: 10, educationNeed: 11 },
+        { id: 'spec_job_050', name: 'Internationale Schiedsrichterin Handel', salary: 145000, stress: 11, prestige: 12, educationNeed: 14 }
+      ],
+      diseases: Array.from({ length: 180 }, (_, i) => ({
+        id: `dis_${String(i + 1).padStart(3, '0')}`,
+        name: `Syndrom-${i + 1}`,
+        severity: 1 + (i % 10),
+        hereditaryChance: (i % 9) * 0.03,
+      })),
+      eventTexts: Array.from({ length: 280 }, (_, i) => `Globales Ereignis #${i + 1}: Markt verschiebt sich um ${(Math.sin(i) * 4).toFixed(1)}%.`),
+      marketAssets: [
+        { id: 'bluechip', name: 'Blue Chip Stocks', class: 'stock', volatility: 0.05, dividend: 0.03, value: 120, history: [120] },
+        { id: 'etf_world', name: 'Global ETF', class: 'etf', volatility: 0.03, dividend: 0.025, value: 100, history: [100] },
+        { id: 'crypto', name: 'Crypto Basket', class: 'crypto', volatility: 0.3, dividend: 0, value: 70, history: [70] },
+        { id: 'green_etf', name: 'Clean Energy ETF', class: 'etf', volatility: 0.06, dividend: 0.015, value: 95, history: [95] },
+        { id: 'defense_stock', name: 'Defense Stock', class: 'stock', volatility: 0.08, dividend: 0.02, value: 90, history: [90] }
+      ]
+    };
+
+    // Erweiterung: +100 Lebensereignisse, +40 Berufe, +30 Länder gesamt,
+    // +20 Investitionsmechaniken/-möglichkeiten, +20 kriminelle Aktivitäten.
+    const countryExpansion = {
+      Kanada: { iqBias: 6, wealthBias: 32000, healthcare: 12, corruption: 3, education: 10, socialMobility: 0.79, startupClimate: 0.66, safetyNet: 0.87, crimeExposure: 0.18, nutritionQuality: 0.84, housingPressure: 0.71, digitalAccess: 0.91, civicTrust: 0.78, climateStress: 0.44, nepotism: 0.21, bureaucracy: 0.52, scholarshipRate: 0.63, politicalStability: 0.89, gini: 0.31, businessFreedom: 0.9, youthUnemployment: 0.39 },
+      Schweden: { iqBias: 7, wealthBias: 36000, healthcare: 13, corruption: 2, education: 11, socialMobility: 0.85, startupClimate: 0.68, safetyNet: 0.92, crimeExposure: 0.14, nutritionQuality: 0.89, housingPressure: 0.66, digitalAccess: 0.93, civicTrust: 0.82, climateStress: 0.5, nepotism: 0.16, bureaucracy: 0.61, scholarshipRate: 0.7, politicalStability: 0.91, gini: 0.28, businessFreedom: 0.92, youthUnemployment: 0.35 },
+      Finnland: { iqBias: 7, wealthBias: 34000, healthcare: 13, corruption: 2, education: 12, socialMobility: 0.87, startupClimate: 0.64, safetyNet: 0.93, crimeExposure: 0.13, nutritionQuality: 0.9, housingPressure: 0.63, digitalAccess: 0.92, civicTrust: 0.83, climateStress: 0.54, nepotism: 0.15, bureaucracy: 0.59, scholarshipRate: 0.73, politicalStability: 0.9, gini: 0.25, businessFreedom: 0.91, youthUnemployment: 0.34 },
+      Daenemark: { iqBias: 7, wealthBias: 35500, healthcare: 12, corruption: 2, education: 11, socialMobility: 0.86, startupClimate: 0.67, safetyNet: 0.91, crimeExposure: 0.15, nutritionQuality: 0.88, housingPressure: 0.68, digitalAccess: 0.92, civicTrust: 0.81, climateStress: 0.47, nepotism: 0.17, bureaucracy: 0.56, scholarshipRate: 0.69, politicalStability: 0.9, gini: 0.27, businessFreedom: 0.92, youthUnemployment: 0.36 },
+      Niederlande: { iqBias: 6, wealthBias: 30000, healthcare: 10, corruption: 3, education: 10, socialMobility: 0.78, startupClimate: 0.72, safetyNet: 0.84, crimeExposure: 0.19, nutritionQuality: 0.84, housingPressure: 0.7, digitalAccess: 0.92, civicTrust: 0.77, climateStress: 0.43, nepotism: 0.2, bureaucracy: 0.47, scholarshipRate: 0.61, politicalStability: 0.87, gini: 0.32, businessFreedom: 0.94, youthUnemployment: 0.41 },
+      Frankreich: { iqBias: 4, wealthBias: 28000, healthcare: 9, corruption: 4, education: 9, socialMobility: 0.68, startupClimate: 0.6, safetyNet: 0.76, crimeExposure: 0.26, nutritionQuality: 0.79, housingPressure: 0.73, digitalAccess: 0.89, civicTrust: 0.65, climateStress: 0.46, nepotism: 0.28, bureaucracy: 0.74, scholarshipRate: 0.55, politicalStability: 0.8, gini: 0.36, businessFreedom: 0.9, youthUnemployment: 0.47 },
+      Spanien: { iqBias: 3, wealthBias: 22000, healthcare: 7, corruption: 5, education: 8, socialMobility: 0.61, startupClimate: 0.56, safetyNet: 0.7, crimeExposure: 0.28, nutritionQuality: 0.76, housingPressure: 0.71, digitalAccess: 0.85, civicTrust: 0.62, climateStress: 0.49, nepotism: 0.3, bureaucracy: 0.66, scholarshipRate: 0.51, politicalStability: 0.76, gini: 0.39, businessFreedom: 0.88, youthUnemployment: 0.52 },
+      Italien: { iqBias: 3, wealthBias: 24000, healthcare: 8, corruption: 6, education: 8, socialMobility: 0.6, startupClimate: 0.57, safetyNet: 0.69, crimeExposure: 0.29, nutritionQuality: 0.78, housingPressure: 0.74, digitalAccess: 0.86, civicTrust: 0.6, climateStress: 0.47, nepotism: 0.36, bureaucracy: 0.71, scholarshipRate: 0.5, politicalStability: 0.75, gini: 0.4, businessFreedom: 0.87, youthUnemployment: 0.53 },
+      Polen: { iqBias: 3, wealthBias: 16000, healthcare: 6, corruption: 6, education: 7, socialMobility: 0.58, startupClimate: 0.55, safetyNet: 0.64, crimeExposure: 0.31, nutritionQuality: 0.73, housingPressure: 0.62, digitalAccess: 0.81, civicTrust: 0.58, climateStress: 0.42, nepotism: 0.34, bureaucracy: 0.57, scholarshipRate: 0.47, politicalStability: 0.7, gini: 0.38, businessFreedom: 0.83, youthUnemployment: 0.5 },
+      Tuerkei: { iqBias: 1, wealthBias: 11000, healthcare: 2, corruption: 11, education: 4, socialMobility: 0.46, startupClimate: 0.54, safetyNet: 0.43, crimeExposure: 0.46, nutritionQuality: 0.62, housingPressure: 0.67, digitalAccess: 0.75, civicTrust: 0.43, climateStress: 0.55, nepotism: 0.49, bureaucracy: 0.63, scholarshipRate: 0.41, politicalStability: 0.58, gini: 0.52, businessFreedom: 0.79, youthUnemployment: 0.65 },
+      Mexiko: { iqBias: 0, wealthBias: 9500, healthcare: 1, corruption: 10, education: 4, socialMobility: 0.44, startupClimate: 0.59, safetyNet: 0.39, crimeExposure: 0.52, nutritionQuality: 0.6, housingPressure: 0.65, digitalAccess: 0.73, civicTrust: 0.4, climateStress: 0.53, nepotism: 0.55, bureaucracy: 0.46, scholarshipRate: 0.39, politicalStability: 0.57, gini: 0.54, businessFreedom: 0.76, youthUnemployment: 0.67 },
+      Argentinien: { iqBias: 2, wealthBias: 9000, healthcare: 2, corruption: 9, education: 5, socialMobility: 0.5, startupClimate: 0.57, safetyNet: 0.45, crimeExposure: 0.41, nutritionQuality: 0.67, housingPressure: 0.6, digitalAccess: 0.78, civicTrust: 0.51, climateStress: 0.48, nepotism: 0.45, bureaucracy: 0.52, scholarshipRate: 0.44, politicalStability: 0.62, gini: 0.47, businessFreedom: 0.8, youthUnemployment: 0.72 },
+      Chile: { iqBias: 3, wealthBias: 14000, healthcare: 5, corruption: 6, education: 7, socialMobility: 0.59, startupClimate: 0.61, safetyNet: 0.59, crimeExposure: 0.33, nutritionQuality: 0.71, housingPressure: 0.58, digitalAccess: 0.82, civicTrust: 0.56, climateStress: 0.41, nepotism: 0.32, bureaucracy: 0.49, scholarshipRate: 0.49, politicalStability: 0.69, gini: 0.4, businessFreedom: 0.85, youthUnemployment: 0.48 },
+      Peru: { iqBias: 0, wealthBias: 8000, healthcare: 0, corruption: 9, education: 3, socialMobility: 0.43, startupClimate: 0.52, safetyNet: 0.35, crimeExposure: 0.45, nutritionQuality: 0.58, housingPressure: 0.57, digitalAccess: 0.7, civicTrust: 0.39, climateStress: 0.54, nepotism: 0.5, bureaucracy: 0.43, scholarshipRate: 0.36, politicalStability: 0.55, gini: 0.53, businessFreedom: 0.73, youthUnemployment: 0.66 },
+      Kolumbien: { iqBias: 1, wealthBias: 8500, healthcare: 1, corruption: 10, education: 4, socialMobility: 0.45, startupClimate: 0.56, safetyNet: 0.38, crimeExposure: 0.49, nutritionQuality: 0.6, housingPressure: 0.59, digitalAccess: 0.72, civicTrust: 0.42, climateStress: 0.52, nepotism: 0.52, bureaucracy: 0.45, scholarshipRate: 0.38, politicalStability: 0.56, gini: 0.51, businessFreedom: 0.75, youthUnemployment: 0.64 },
+      Suedafrika: { iqBias: 0, wealthBias: 10000, healthcare: 0, corruption: 11, education: 4, socialMobility: 0.42, startupClimate: 0.55, safetyNet: 0.37, crimeExposure: 0.54, nutritionQuality: 0.59, housingPressure: 0.63, digitalAccess: 0.74, civicTrust: 0.41, climateStress: 0.56, nepotism: 0.53, bureaucracy: 0.47, scholarshipRate: 0.37, politicalStability: 0.55, gini: 0.56, businessFreedom: 0.77, youthUnemployment: 0.63 },
+      Aegypten: { iqBias: 0, wealthBias: 7000, healthcare: -1, corruption: 11, education: 3, socialMobility: 0.4, startupClimate: 0.49, safetyNet: 0.32, crimeExposure: 0.5, nutritionQuality: 0.55, housingPressure: 0.61, digitalAccess: 0.68, civicTrust: 0.37, climateStress: 0.6, nepotism: 0.56, bureaucracy: 0.58, scholarshipRate: 0.33, politicalStability: 0.5, gini: 0.57, businessFreedom: 0.69, youthUnemployment: 0.7 },
+      Kenia: { iqBias: 0, wealthBias: 6500, healthcare: -2, corruption: 10, education: 3, socialMobility: 0.41, startupClimate: 0.58, safetyNet: 0.31, crimeExposure: 0.47, nutritionQuality: 0.54, housingPressure: 0.58, digitalAccess: 0.65, civicTrust: 0.39, climateStress: 0.57, nepotism: 0.51, bureaucracy: 0.44, scholarshipRate: 0.35, politicalStability: 0.53, gini: 0.55, businessFreedom: 0.71, youthUnemployment: 0.68 },
+      China: { iqBias: 4, wealthBias: 18000, healthcare: 6, corruption: 8, education: 8, socialMobility: 0.55, startupClimate: 0.71, safetyNet: 0.58, crimeExposure: 0.3, nutritionQuality: 0.75, housingPressure: 0.76, digitalAccess: 0.88, civicTrust: 0.57, climateStress: 0.5, nepotism: 0.34, bureaucracy: 0.65, scholarshipRate: 0.46, politicalStability: 0.81, gini: 0.35, businessFreedom: 0.93, youthUnemployment: 0.49 },
+      Suedkorea: { iqBias: 7, wealthBias: 23000, healthcare: 10, corruption: 4, education: 11, socialMobility: 0.64, startupClimate: 0.66, safetyNet: 0.74, crimeExposure: 0.18, nutritionQuality: 0.84, housingPressure: 0.78, digitalAccess: 0.94, civicTrust: 0.66, climateStress: 0.44, nepotism: 0.24, bureaucracy: 0.69, scholarshipRate: 0.52, politicalStability: 0.86, gini: 0.3, businessFreedom: 0.95, youthUnemployment: 0.43 },
+      Singapur: { iqBias: 8, wealthBias: 42000, healthcare: 13, corruption: 2, education: 12, socialMobility: 0.77, startupClimate: 0.81, safetyNet: 0.83, crimeExposure: 0.1, nutritionQuality: 0.88, housingPressure: 0.83, digitalAccess: 0.98, civicTrust: 0.8, climateStress: 0.39, nepotism: 0.13, bureaucracy: 0.48, scholarshipRate: 0.62, politicalStability: 0.93, gini: 0.22, businessFreedom: 0.99, youthUnemployment: 0.38 },
+      Australien: { iqBias: 6, wealthBias: 31000, healthcare: 11, corruption: 3, education: 10, socialMobility: 0.74, startupClimate: 0.67, safetyNet: 0.82, crimeExposure: 0.2, nutritionQuality: 0.83, housingPressure: 0.7, digitalAccess: 0.9, civicTrust: 0.75, climateStress: 0.46, nepotism: 0.22, bureaucracy: 0.5, scholarshipRate: 0.58, politicalStability: 0.88, gini: 0.33, businessFreedom: 0.91, youthUnemployment: 0.44 },
+      Neuseeland: { iqBias: 6, wealthBias: 29000, healthcare: 11, corruption: 2, education: 10, socialMobility: 0.8, startupClimate: 0.62, safetyNet: 0.88, crimeExposure: 0.16, nutritionQuality: 0.85, housingPressure: 0.65, digitalAccess: 0.89, civicTrust: 0.79, climateStress: 0.47, nepotism: 0.18, bureaucracy: 0.47, scholarshipRate: 0.61, politicalStability: 0.9, gini: 0.29, businessFreedom: 0.89, youthUnemployment: 0.37 },
+    };
+    Object.assign(Data_Library.countries, countryExpansion);
+
+    const lifeEventExpansion = {
+      childhood: [
+        'Du gewinnst ein Stipendium fuer ein Coding-Sommercamp.', 'Ein Schulgartenprojekt macht dich zur Umweltsprecher:in.', 'Dein Grossvater zeigt dir fruehe Buchhaltung im Familienbetrieb.', 'Eine Theaterrolle staerkt deine soziale Kompetenz deutlich.', 'Du baust deinen ersten kleinen Online-Shop mit Hilfe der Familie.', 'Ein neues Geschwisterkind veraendert eure finanzielle Situation.', 'Du wechselst auf eine Ganztagsschule mit Leistungsfokus.', 'Du bekommst ein altes Fahrrad und startest kleine Lieferdienste.', 'Ein Mathematik-Defizit wird mit Foerderunterricht aufgeholt.', 'Du nimmst an einem Schachturnier auf Landesebene teil.', 'Ein Sportinternat bietet dir eine Probeaufnahme an.', 'Du beginnst frueh mit Fremdsprachen ueber Lernapps.', 'Ein Unfall im Haushalt fuehrt zu laengerer Genesungszeit.', 'Du erhaeltst eine Auszeichnung fuer soziales Engagement.', 'Ein Nachbarschaftskonflikt belastet deine Familie monatelang.', 'Du hilfst bei der Ernte im Heimatdorf und lernst Disziplin.', 'Eine Mentorengruppe foerdert dein naturwissenschaftliches Talent.', 'Du wirst Klassensprecher:in trotz starker Konkurrenz.', 'Ein Schulwechsel in ein anderes Bildungssystem fordert dich stark.', 'Du lernst Musikinstrumente ueber eine kommunale Musikschule.', 'Deine Familie verliert kurzfristig Einkommen durch Jobverlust.', 'Du bekommst Zugang zu einer Kinder-Uni mit Laborarbeit.', 'Eine Lernschwaeche wird diagnostiziert und gezielt therapiert.', 'Du organisierst einen Wohltaetigkeitslauf fuer dein Viertel.', 'Ein lokaler Unternehmer finanziert deine Schulmaterialien.', 'Du entdeckst Talent im Storytelling und Schreiben.', 'Du wirst in ein MINT-Foerderprogramm aufgenommen.', 'Eine lange Pendelzeit zur Schule kostet dir Freizeit.', 'Du besuchst ein Kinderparlament und lernst Debattenkultur.', 'Dein erstes Taschengeldkonto weckt Finanzinteresse.', 'Ein Austauschprojekt bringt dir neue kulturelle Perspektiven.', 'Du reparierst alte Geraete und verkaufst sie mit Gewinn.', 'Ein schwieriger Lehrer lehrt dich Frustrationstoleranz.', 'Du gewinnst einen regionalen Kunstpreis.', 'Du lernst Erste Hilfe in einem Jugendprojekt.'
+      ],
+      youth: [
+        'Du startest einen Podcast ueber Jugendpolitik und Reichweite waechst.', 'Ein Nebenjob im Krankenhaus zeigt dir medizinische Karrierewege.', 'Du entwickelst ein Indie-Game und veroeffentlichst es online.', 'Ein familiaerer Umzug zerstoert dein soziales Netzwerk voruebergehend.', 'Du erhaeltst eine Foerderung fuer Robotik-Wettbewerbe.', 'Eine Sportverletzung beendet deine Profiambitionen frueh.', 'Du organisierst ein Benefiz-Event und lernst Projektmanagement.', 'Ein Mentor aus der Tech-Branche vermittelt dir Praktikumsplaetze.', 'Du wirst in einen Pruefungsbetrugsskandal deiner Schule hineingezogen.', 'Ein Stipendium erlaubt dir private Nachhilfe in Mathe und Physik.', 'Du lernst Video-Editing und baust eine Creator-Marke auf.', 'Ein Auslandspraktikum eroeffnet internationale Kontakte.', 'Du scheiterst an einem ersten Start-up-Projekt und lernst daraus.', 'Du trittst einem Gruenderclub bei und pitchst Ideen.', 'Ein Finanzfehler im Trading kostet dein Erspartes.', 'Du wirst Vorsitzende:r eines Jugendrates.', 'Ein strikter Trainingsplan verbessert deine mentale Resilienz.', 'Du startest Community-Nachhilfe und erhaeltst kleine Honorare.', 'Du faellst wegen Ueberlastung in ein Motivationsloch.', 'Eine Forschungsassistenz an der Uni bringt Empfehlungsschreiben.', 'Du wirst im Ehrenamt fuer Krisenhilfe ausgezeichnet.', 'Eine toxische Online-Community schadet deiner Reputation.', 'Du kaufst und verkaufst Sneaker als Mikro-Business.', 'Ein Coding-Wettbewerb bringt dir Kontakte zu Investoren.', 'Du lernst Verhandlungstechniken in einem Debattencamp.', 'Ein Fehlinvestment in Krypto fuehrt zu ersten Schulden.', 'Du baust eine Nonprofit-App fuer deine Stadt.', 'Ein familiaerer Pflegefall zwingt dich zu Teilzeitlernen.', 'Du wirst als Nachwuchskraft in der Lokalzeitung portraetiert.', 'Ein Musiklabel bietet dir einen unguenstigen Vertrag an.', 'Du absolvierst ein Finanzpraktikum bei einer Regionalbank.', 'Eine Start-up-Idee gewinnt ein kommunales Preisgeld.', 'Du wirst auf Social Media wegen Fehltritts gecancelt.', 'Ein duales Studium verbessert deine Karrierechancen massiv.', 'Du leitest ein interkulturelles Schulprojekt erfolgreich.'
+      ],
+      adult: [
+        'Du uebernimmst ein Krisenprojekt und rettest die Abteilung.', 'Ein Hauskredit mit variablem Zins bringt dich unter Druck.', 'Du verhandelst Beteiligungen statt nur Gehalt.', 'Eine Unternehmensfusion macht deinen Job redundant.', 'Du baust ein Franchisesystem im Dienstleistungssektor auf.', 'Ein Arbeitsunfall erfordert berufliche Neuorientierung.', 'Du wirst Sachverstaendige:r in einem grossen Gerichtsfall.', 'Ein Side-Business skaliert ueberraschend international.', 'Du verlierst durch Waehrungskrise erheblichen Kaufkraftanteil.', 'Ein Mentoring-Programm macht dich zur Fuehrungskraft.', 'Du investierst in Energie-Infrastruktur mit langer Bindung.', 'Ein Partnerkonflikt blockiert gemeinsame Finanzplanung.', 'Du baust ein Team fuer oeffentliche Innovationsprojekte auf.', 'Ein Reputationsschaden durch Medienbericht kostet Auftraege.', 'Du gruendest einen Bildungsfonds fuer benachteiligte Jugendliche.', 'Ein laengerer Rechtsstreit belastet deine Liquiditaet.', 'Du sicherst dir ein Regierungsprojekt mit hoher Sichtbarkeit.', 'Eine Branchenregulierung zerstoert dein altes Geschaeftsmodell.', 'Du wechselst in die Selbststaendigkeit mit unsicherem Einkommen.', 'Ein Technologiewechsel macht deine Skills teilweise obsolet.', 'Du investierst in Health-Tech und erhaeltst erste Exits.', 'Ein hoher Pflegeaufwand fuer Eltern reduziert Karrierezeit.', 'Du wirst in den Vorstand einer Stiftung gewaehlt.', 'Ein missglueckter Immobilien-Deal frisst Reserven auf.', 'Du fuehrst eine erfolgreiche Restrukturierung durch.', 'Dein Unternehmen wird von einem Konzern aufgekauft.', 'Du verlierst Kapital durch Betrug im Auslandsgeschaeft.', 'Ein internationales Zertifikat bringt dir Top-Projekte.', 'Du baust ein anonymes Expert:innen-Netzwerk auf.', 'Eine gescheiterte Expansion zwingt dich zum Personalabbau.'
+      ]
+    };
+    Data_Library.lifeStageEvents.childhood.push(...lifeEventExpansion.childhood);
+    Data_Library.lifeStageEvents.youth.push(...lifeEventExpansion.youth);
+    Data_Library.lifeStageEvents.adult.push(...lifeEventExpansion.adult);
+
+    const jobExpansion = [
+      'Klinik-Controlling-Leiter', 'GeoDaten-Forensiker', 'Katastrophenlogistik-Manager', 'Praeventionsmediziner Betrieb', 'Green-Bond-Analyst', 'Mikrosatelliten-Operator', 'Supply-Chain-Resilience-Architekt', 'Kulturfestival-Produzent', 'Biometrie-Sicherheitsarchitekt', 'OePNV-Netzoptimierer', 'Urban-Heat-Strategieberater', '3D-Druck-Fertigungsleiter', 'Digitale Ethnografie-Forscher', 'Marine-Ressourcenmanager', 'Cyberversicherungs-Aktuari', 'Hydrogen-Infrastruktur-Planer', 'Gerichtsmedien-Stratege', 'Praezisionschirurgie-Assistent KI', 'Agrarfinanz-Controller', 'Datenjournalismus-Redakteur', 'Energiemarkt-Regulierungsberater', 'Sportmedizinischer Leistungscoach', 'Telematik-Flottenanalyst', 'Krisenhilfe-Feldkoordinator', 'Nachhaltigkeits-Reporting-Officer', 'Compliance-Auditor Public Sector', 'Operationsleiter Smart Factory', 'Interaktive Lernarchitektin', 'Sicherheitsdrohnen-Dispatcher', 'Wasserkraft-Wartungsingenieur', 'Digitale Patientenpfad-Managerin', 'Hafenverkehrs-Simulationsplaner', 'Sozialkredit-Risikopruefer', 'Waldschutz-Datenpilot', 'EdTech-Plattform-Produktchef', 'Bioabfall-Kreislaufmanager', 'Air-Cargo-Risikoplaner', 'Unternehmenssanierungs-Spezialist', 'Konsularischer Notfallmanager', 'Quantenverschluesselungs-Berater'
+    ];
+    jobExpansion.forEach((name, i) => {
+      Data_Library.jobs.push({
+        id: `spec_job_${String(i + 51).padStart(3, '0')}`,
+        name,
+        salary: 92000 + i * 1700,
+        stress: 7 + (i % 6),
+        prestige: 8 + Math.floor(i / 8),
+        educationNeed: 9 + (i % 7),
+      });
+    });
+
+    const crimeExpansion = [
+      { id: 'synthetic_id_laundering', text: 'Synthetische Identitaeten fuer Kreditschleifen', risk: 0.43, reward: [3800, 46000] },
+      { id: 'port_insurance_fraud', text: 'Versicherungsbetrug mit Hafenschaeden', risk: 0.39, reward: [2700, 34000] },
+      { id: 'municipal_bid_rigging', text: 'Absprachen bei kommunalen Ausschreibungen', risk: 0.45, reward: [6200, 53000] },
+      { id: 'medical_trial_bribery', text: 'Bestechung in Medikamentenstudien', risk: 0.47, reward: [7100, 62000] },
+      { id: 'airport_baggage_chain', text: 'Schmuggelkette ueber Gepaecklogistik', risk: 0.5, reward: [8300, 72000] },
+      { id: 'counterfeit_semiconductors', text: 'Faelschung kritischer Halbleiter', risk: 0.52, reward: [9000, 88000] },
+      { id: 'fake_esg_fund', text: 'Taeuschung ueber nachhaltige Fondsprodukte', risk: 0.36, reward: [2400, 28000] },
+      { id: 'land_registry_hack', text: 'Manipulation digitaler Grundbuecher', risk: 0.48, reward: [7600, 69000] },
+      { id: 'charter_invoice_loop', text: 'Rechnungsloop bei Privatjet-Charter', risk: 0.41, reward: [4300, 39000] },
+      { id: 'deep_port_mules', text: 'Kuriernetz im Tiefseehafen', risk: 0.44, reward: [5100, 47000] },
+      { id: 'cross_border_vat_chain', text: 'Mehrwertsteuerkarussell international', risk: 0.49, reward: [8900, 82000] },
+      { id: 'hospital_device_theft', text: 'Diebstahl von Klinikgeraeten im Verbund', risk: 0.37, reward: [2200, 26000] },
+      { id: 'water_license_extortion', text: 'Erpressung ueber Wasserlizenzen', risk: 0.42, reward: [4800, 43000] },
+      { id: 'crypto_bridge_exploit', text: 'Exploit einer Krypto-Bridge', risk: 0.54, reward: [12000, 95000] },
+      { id: 'ai_exam_fraud', text: 'KI-gestuetzter Pruefungsbetrug als Service', risk: 0.31, reward: [1200, 18000] },
+      { id: 'supply_invoice_inflation', text: 'Aufblaehen von Lieferkettenrechnungen', risk: 0.4, reward: [3900, 35000] },
+      { id: 'transport_toll_spoofing', text: 'Manipulation von Mautsystemen', risk: 0.35, reward: [1800, 21000] },
+      { id: 'election_ads_black_budget', text: 'Verdeckte Wahlwerbefinanzierung', risk: 0.53, reward: [11000, 90000] },
+      { id: 'cold_storage_blackout', text: 'Sabotage von Kuehlketten zur Marktmanipulation', risk: 0.46, reward: [6500, 56000] },
+      { id: 'pharma_serial_clone', text: 'Klonen von Medikamenten-Seriennummern', risk: 0.5, reward: [8700, 78000] },
+    ];
+    Data_Library.crimes.push(...crimeExpansion);
+
+    Data_Library.investmentMechanics = [
+      { id: 'inv_bonds_ladder', name: 'Anleihenleiter mit Laufzeitstaffelung', risk: 0.18, horizon: 'lang', liquidity: 0.82, expectedReturn: 0.07 },
+      { id: 'inv_dividend_rot', name: 'Dividenden-Rotationsstrategie', risk: 0.33, horizon: 'mittel', liquidity: 0.74, expectedReturn: 0.12 },
+      { id: 'inv_value_screen', name: 'Value-Screening globaler Aktien', risk: 0.36, horizon: 'mittel', liquidity: 0.69, expectedReturn: 0.14 },
+      { id: 'inv_growth_basket', name: 'Wachstumsbasket mit Rebalancing', risk: 0.48, horizon: 'mittel', liquidity: 0.62, expectedReturn: 0.2 },
+      { id: 'inv_etf_core_sat', name: 'Core-Satellite ETF Portfolio', risk: 0.29, horizon: 'lang', liquidity: 0.88, expectedReturn: 0.11 },
+      { id: 'inv_reit_income', name: 'REIT-Mietcashflow-Strategie', risk: 0.31, horizon: 'lang', liquidity: 0.66, expectedReturn: 0.13 },
+      { id: 'inv_commod_hedge', name: 'Rohstoff-Hedge gegen Inflation', risk: 0.42, horizon: 'kurz', liquidity: 0.59, expectedReturn: 0.18 },
+      { id: 'inv_crypto_dca', name: 'Krypto-DCA mit Volatilitaetsbaendern', risk: 0.61, horizon: 'lang', liquidity: 0.57, expectedReturn: 0.28 },
+      { id: 'inv_options_cover', name: 'Covered-Call Einkommensmodell', risk: 0.47, horizon: 'kurz', liquidity: 0.63, expectedReturn: 0.22 },
+      { id: 'inv_private_credit', name: 'Private-Credit Mikrofinanzpool', risk: 0.39, horizon: 'lang', liquidity: 0.41, expectedReturn: 0.17 },
+      { id: 'inv_startup_angel', name: 'Angel-Invest in Seed-Startups', risk: 0.72, horizon: 'lang', liquidity: 0.25, expectedReturn: 0.42 },
+      { id: 'inv_farmland_token', name: 'Tokenisierte Agrarflaechen', risk: 0.44, horizon: 'lang', liquidity: 0.38, expectedReturn: 0.19 },
+      { id: 'inv_climate_bonds', name: 'Klimaanleihen mit Impact-Ziel', risk: 0.27, horizon: 'lang', liquidity: 0.71, expectedReturn: 0.1 },
+      { id: 'inv_art_fraction', name: 'Fraktionale Kunstinvestments', risk: 0.51, horizon: 'lang', liquidity: 0.29, expectedReturn: 0.24 },
+      { id: 'inv_fx_carry', name: 'FX-Carry mit Zinsdifferenzen', risk: 0.49, horizon: 'kurz', liquidity: 0.67, expectedReturn: 0.21 },
+      { id: 'inv_metals_stack', name: 'Edelmetall-Stacking physisch', risk: 0.24, horizon: 'lang', liquidity: 0.53, expectedReturn: 0.09 },
+      { id: 'inv_green_infra', name: 'Green-Infrastructure Beteiligungen', risk: 0.34, horizon: 'lang', liquidity: 0.36, expectedReturn: 0.15 },
+      { id: 'inv_peer_lending', name: 'P2P-Kreditmarktplatz diversifiziert', risk: 0.46, horizon: 'mittel', liquidity: 0.64, expectedReturn: 0.2 },
+      { id: 'inv_event_driven', name: 'Event-Driven Merger Trades', risk: 0.55, horizon: 'kurz', liquidity: 0.61, expectedReturn: 0.27 },
+      { id: 'inv_insurance_linked', name: 'Versicherungsgebundene Katastrophenbonds', risk: 0.37, horizon: 'lang', liquidity: 0.22, expectedReturn: 0.16 },
+    ];
+    Data_Library.investmentOpportunities = [
+      'Fruehphase-Solarspeicherfonds in Suedostasien', 'Rechenzentrums-REIT in Nordeuropa', 'Wasserentsalzungsprojekt im Mittelmeerraum', 'Biotech-Lizenzpool fuer seltene Krankheiten', 'E-Mobility-Ladeinfrastruktur in Metropolen', 'Schwellenlaender-Mittelstandsanleihen', 'Kuehlkettenlogistik fuer Pharmaexporte', 'KI-Tooling-ETF fuer Unternehmenssoftware', 'Gemeinwohl-Wohnungsbau mit Mietbindung', 'Hafenmodernisierung ueber PPP-Finanzierung', 'Satellitendaten-Analytics Wachstumsfonds', 'Rural Broadband Infrastrukturkonsortium', 'Windpark-Repowering mit Speicherkopplung', 'FoodTech-Proteinersatz Venture Pool', 'Sicherheitschip-Halbleiterkorb', 'Mikroversicherungs-Plattform Afrika', 'Geothermie-Ausbau Lateinamerika', 'Abfall-zu-Energie Projektgesellschaft', 'Digitale Bildungsplattformen Frontier Markets', 'Waldrestaurations-Zertifikate mit Carbon-Revenue'
+    ];
+
+    const gameState = {
+      player: null,
+      profiles: [],
+      worldFeed: [],
+      interactions: [],
+      market: structuredClone(Data_Library.marketAssets),
+      activeTab: 'Leben',
+      inflation: 0.018,
+      taxRate: 0.22,
+      year: 0,
+      currentYear: 2026,
+      subscriptions: [],
+      worldTickerItems: [],
+      housingMarket: [],
+      globalNews: [],
+      lastMarketShock: 'Stabile Lage'
+    };
+
+    const tabs = ['Leben', 'Bildung', 'Karriere', 'Finanzen', 'Immobilien', 'Börse', 'Beziehungen', 'Kriminalität', 'Welt-Hub'];
+    const locations = ['Berlin', 'Tokyo', 'São Paulo', 'Lagos', 'New York', 'Mumbai', 'Oslo', 'Dubai'];
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    function formatMoney(v) { return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v); }
+
+    function stageFromAge(age) {
+      if (age < 13) return 'childhood';
+      if (age < 20) return 'youth';
+      return 'adult';
+    }
+
+    function createInitialPlayer() {
+      const countryNames = Object.keys(Data_Library.countries);
+      const country = pick(countryNames);
+      const c = Data_Library.countries[country];
+
+      const eliteFamilyChance = clamp(0.02 + (1 - c.nepotism) * 0.08 + c.socialMobility * 0.09 + (c.businessFreedom || 0.7) * 0.03 - (c.gini || 0.4) * 0.05, 0.01, 0.26);
+      const lowIncomePenalty = clamp(0.16 + c.housingPressure * 0.28 + c.climateStress * 0.14 + (c.youthUnemployment || 0.5) * 0.22 + (c.gini || 0.4) * 0.2, 0.10, 0.64);
+      const isEliteFamily = Math.random() < eliteFamilyChance;
+
+      const iq = clamp(
+        rand(76, 132)
+          + c.iqBias
+          + Math.round(c.education * 0.5)
+          + Math.round(c.digitalAccess * 8)
+          + Math.round((c.politicalStability || 0.7) * 3)
+          - Math.round(c.climateStress * 4),
+        65,
+        178
+      );
+
+      const hereditaryBase = clamp(0.09 + (1 - c.nutritionQuality) * 0.2 + c.climateStress * 0.1, 0.06, 0.34);
+      const inheritedDisease = Math.random() < hereditaryBase ? pick(Data_Library.diseases) : null;
+
+      const wealthFloor = isEliteFamily ? 28000 : 500;
+      const wealthCeiling = isEliteFamily ? 180000 : 62000;
+      const parentCapital = clamp(
+        rand(wealthFloor, wealthCeiling)
+        + c.wealthBias
+        + Math.round(c.startupClimate * 9000)
+        + Math.round((c.businessFreedom || 0.7) * 4500)
+        - Math.round(c.housingPressure * 5000)
+        - Math.round((c.gini || 0.4) * 9000)
+        - Math.round(lowIncomePenalty * 3500),
+        250,
+        320000
+      );
+
+      const earlyDebtRisk = clamp(0.03 + c.housingPressure * 0.07 + c.bureaucracy * 0.05 + (c.youthUnemployment || 0.5) * 0.06 + (c.gini || 0.4) * 0.04, 0.02, 0.24);
+      const initialDebt = Math.random() < earlyDebtRisk ? rand(500, 6500) : 0;
+      const scholarshipBonus = Math.random() < c.scholarshipRate ? rand(1, 4) : 0;
+
+      const healthcareScore = clamp(
+        68
+        + c.healthcare
+        + Math.round(c.nutritionQuality * 16)
+        + Math.round(c.safetyNet * 7)
+        + Math.round((c.politicalStability || 0.7) * 4)
+        - Math.round(c.climateStress * 9)
+        - Math.round((c.gini || 0.4) * 6)
+        - (inheritedDisease?.severity || 0),
+        10,
+        100
+      );
+
+      const happinessBase = clamp(
+        48
+        + Math.round(c.safetyNet * 19)
+        + Math.round(c.civicTrust * 12)
+        + Math.round(c.socialMobility * 8)
+        - Math.round(c.crimeExposure * 15)
+        - Math.round(c.housingPressure * 9)
+        - Math.round((c.youthUnemployment || 0.5) * 8)
+        + rand(-10, 11),
+        5,
+        100
+      );
+
+      const socialStart = clamp(
+        8
+        + Math.floor(parentCapital / 9000)
+        + Math.round(c.socialMobility * 18)
+        + Math.round((c.politicalStability || 0.7) * 5)
+        - Math.round(c.nepotism * 8)
+        - Math.round((c.gini || 0.4) * 4)
+        + (isEliteFamily ? 12 : 0),
+        1,
+        100
+      );
+
+      const educationLevel = clamp(
+        scholarshipBonus + Math.round(c.education * 0.25) + Math.round(c.digitalAccess * 2) + Math.round((c.politicalStability || 0.7) * 2) - Math.round((c.youthUnemployment || 0.5) * 2),
+        0,
+        10
+      );
+
+      return {
+        id: `local_${crypto.randomUUID().slice(0, 8)}`,
+        username: `Spieler_${rand(1000, 9999)}`,
+        country,
+        age: 0,
+        health: healthcareScore,
+        happiness: happinessBase,
+        intelligence: clamp(Math.floor(iq / 1.2), 35, 100),
+        looks: clamp(rand(28, 96) + Math.round(c.nutritionQuality * 4) - Math.round(c.climateStress * 2), 10, 100),
+        balance: Math.max(0, parentCapital * 0.1 - initialDebt * 0.2),
+        parentCapital,
+        socialStatus: socialStart,
+        location: pick(locations),
+        fame: rand(0, 8),
+        educationLevel,
+        jobId: null,
+        jailedYears: 0,
+        wantedLevel: clamp(Math.round(c.crimeExposure * 2.2 + c.corruption / 13 + (c.youthUnemployment || 0.5)), 0, 6),
+        relationship: null,
+        children: 0,
+        debt: initialDebt,
+        portfolio: { stocks: 0, crypto: 0, realestate: 0, bonds: 0, commodities: 0 },
+        diseases: inheritedDisease ? [inheritedDisease.id] : [],
+        log: [
+          `Geboren in ${country}. Elternkapital: ${formatMoney(parentCapital)} (${isEliteFamily ? 'Elite-Haushalt' : 'Standard-Haushalt'}).`,
+          `Startchancen → Mobilität ${(c.socialMobility * 100).toFixed(0)}%, Stabilität ${((c.politicalStability || 0.7) * 100).toFixed(0)}%, Digitale Teilhabe ${(c.digitalAccess * 100).toFixed(0)}%, Jugendarbeitslosigkeit ${((c.youthUnemployment || 0.5) * 100).toFixed(0)}%.`,
+          inheritedDisease ? `Erbkrankheit diagnostiziert: ${inheritedDisease.name}.` : 'Keine bekannten Erbkrankheiten.',
+          initialDebt > 0 ? `Frühe Verschuldung durch Systemdruck: ${formatMoney(initialDebt)}.` : 'Kein Startkredit notwendig.'
+        ]
+      };
+    }
+
+    function generateBotProfiles(count = 18) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `bot_${i + 1}`,
+        username: `Citizen_${rand(100, 999)}_${i + 1}`,
+        age: rand(14, 72),
+        balance: rand(500, 420000),
+        socialStatus: rand(5, 95),
+        location: pick(locations),
+        fame: rand(0, 100),
+        relationship: Math.random() > 0.65 ? 'verheiratet' : 'single',
+      }));
+    }
+
+    function addLog(text, type = 'life') {
+      const stamp = `[${gameState.currentYear}]`;
+      if (type === 'life') {
+        gameState.player.log.unshift(`${stamp} ${text}`);
+      } else {
+        gameState.worldFeed.unshift(`${stamp} ${text}`);
+      }
+      if (gameState.player.log.length > 220) gameState.player.log.length = 220;
+      if (gameState.worldFeed.length > 320) gameState.worldFeed.length = 320;
+      render();
+    }
+
+    async function persistWorldEvent(content, event_type = 'global') {
+      if (!supabase) return;
+      await supabase.from('world_events').insert({
+        player_id: gameState.player.id,
+        event_type,
+        content,
+        payload_json: { year: gameState.currentYear }
+      });
+    }
+
+    async function syncProfile() {
+      if (!supabase) return;
+      const p = gameState.player;
+      await supabase.from('profiles').upsert({
+        id: p.id,
+        username: p.username,
+        age: p.age,
+        health: p.health,
+        happiness: p.happiness,
+        intelligence: p.intelligence,
+        looks: p.looks,
+        balance: p.balance,
+        social_status: p.socialStatus,
+        location: p.location,
+        stats_json: p,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    function initRealtimeSubscriptions() {
+      if (!supabase) {
+        addLog('Offline-Modus: Supabase nicht konfiguriert. Lokale Multiplayer-Simulation aktiv.', 'world');
+        setInterval(simulateWorldTick, 7000);
+        return;
+      }
+
+      const eventsChannel = supabase.channel('world_events_live').on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'world_events' },
+        payload => {
+          const item = payload.new;
+          gameState.worldFeed.unshift(`[LIVE] ${item.content}`);
+          render();
+        }
+      );
+
+      const profileChannel = supabase.channel('profiles_live').on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => loadPlayers()
+      );
+
+      eventsChannel.subscribe();
+      profileChannel.subscribe();
+      gameState.subscriptions.push(eventsChannel, profileChannel);
+    }
+
+    async function transferFundsAtomic(fromPlayerId, toPlayerId, amount, reason = 'transfer') {
+      if (amount <= 0) return false;
+      if (supabase) {
+        const { error } = await supabase.rpc('transfer_funds_atomic', {
+          p_from: fromPlayerId,
+          p_to: toPlayerId,
+          p_amount: amount,
+          p_reason: reason
+        });
+        if (!error) return true;
+      }
+
+      const fromProfile = gameState.profiles.find(x => x.id === fromPlayerId) || (gameState.player.id === fromPlayerId ? gameState.player : null);
+      const toProfile = gameState.profiles.find(x => x.id === toPlayerId) || (gameState.player.id === toPlayerId ? gameState.player : null);
+      if (!fromProfile || !toProfile || fromProfile.balance < amount) return false;
+      fromProfile.balance -= amount;
+      toProfile.balance += amount;
+      return true;
+    }
+
+    function createHousingMarket() {
+      const countries = Object.keys(Data_Library.countries);
+      const propertyTypes = ['Studio', 'WG-Zimmer', 'Apartment', 'Haus', 'Villa'];
+      return Array.from({ length: 18 }, (_, i) => ({
+        id: `prop_${i + 1}`,
+        title: `${pick(propertyTypes)} #${i + 1}`,
+        country: pick(countries),
+        city: pick(locations),
+        price: rand(60000, 900000),
+        rent: rand(350, 4800),
+        condition: rand(62, 96),
+        ownerId: null,
+        tenantId: null,
+      }));
+    }
+
+    function getMarketShock() {
+      const newsPool = [
+        { text: 'Tech-Boom treibt digitale Assets', stock: 0.02, etf: 0.015, crypto: 0.22 },
+        { text: 'Krieg belastet Aktienmärkte', stock: -0.12, etf: -0.08, crypto: -0.24 },
+        { text: 'Zinssenkung stimuliert ETF-Flows', stock: 0.03, etf: 0.05, crypto: 0.06 },
+        { text: 'Regulatorik trifft Kryptobörsen', stock: -0.01, etf: 0.01, crypto: -0.38 },
+        { text: 'Rohstoffkrise erhöht Volatilität', stock: -0.04, etf: -0.02, crypto: 0.1 },
+      ];
+      return pick(newsPool);
+    }
+
+    function calculateMarket() {
+      const shock = Math.random() < 0.45 ? getMarketShock() : { text: 'Stabile Makrolage', stock: 0, etf: 0, crypto: 0 };
+      gameState.lastMarketShock = shock.text;
+      gameState.globalNews.unshift(`[NEWS] ${shock.text}`);
+      if (gameState.globalNews.length > 24) gameState.globalNews.length = 24;
+
+      gameState.market.forEach(asset => {
+        const randomMove = (Math.random() - 0.5) * 2 * asset.volatility;
+        const influence = asset.class === 'crypto' ? shock.crypto : asset.class === 'etf' ? shock.etf : shock.stock;
+        const pct = randomMove + influence;
+        asset.value = clamp(asset.value * (1 + pct), 1, 2500);
+        asset.history.push(asset.value);
+        if (asset.history.length > 18) asset.history.shift();
+      });
+    }
+
+    function calculateHousingMarket() {
+      gameState.housingMarket.forEach(h => {
+        const decay = rand(1, 4);
+        h.condition = clamp(h.condition - decay, 20, 100);
+        h.price = Math.max(20000, h.price * (1 + (h.condition - 60) / 1200));
+      });
+    }
+
+    function applyEconomyTick() {
+      calculateMarket();
+      calculateHousingMarket();
+      gameState.inflation = clamp(gameState.inflation + (Math.random() - 0.5) * 0.01, -0.02, 0.12);
+      gameState.taxRate = clamp(0.15 + gameState.inflation * 1.3 + Math.random() * 0.05, 0.12, 0.48);
+    }
+
+    function recalcDerivedStats() {
+      const p = gameState.player;
+      const diseasePenalty = p.diseases.length * 1.2;
+      const debtPenalty = p.debt > 0 ? Math.min(18, p.debt / 12000) : 0;
+      const jailPenalty = p.jailedYears * 2.5;
+      p.health = clamp(p.health - diseasePenalty * 0.12 - jailPenalty * 0.1, 0, 100);
+      p.happiness = clamp(p.happiness - debtPenalty * 0.16 + (p.relationship ? 0.4 : -0.2), 0, 100);
+      p.socialStatus = clamp(p.socialStatus + (p.fame / 50) - jailPenalty * 0.2, 1, 100);
+    }
+
+    function processLifeStageEvent() {
+      const stage = stageFromAge(gameState.player.age);
+      const pool = Data_Library.lifeStageEvents[stage];
+      const eventText = pick(pool);
+
+      if (stage === 'childhood') {
+        gameState.player.intelligence = clamp(gameState.player.intelligence + rand(-2, 4), 20, 100);
+        gameState.player.happiness = clamp(gameState.player.happiness + rand(-5, 7), 0, 100);
+      } else if (stage === 'youth') {
+        gameState.player.looks = clamp(gameState.player.looks + rand(-2, 3), 10, 100);
+        gameState.player.happiness = clamp(gameState.player.happiness + rand(-7, 9), 0, 100);
+      } else {
+        gameState.player.health = clamp(gameState.player.health + rand(-6, 2), 0, 100);
+        gameState.player.socialStatus = clamp(gameState.player.socialStatus + rand(-2, 4), 1, 100);
+      }
+
+      addLog(eventText);
+    }
+
+    function processCareer() {
+      const p = gameState.player;
+      if (!p.jobId && p.age >= 16 && Math.random() > 0.25) {
+        const possibleJobs = Data_Library.jobs.filter(j => j.educationNeed <= p.educationLevel + Math.floor(p.intelligence / 12));
+        const job = possibleJobs.length ? pick(possibleJobs) : Data_Library.jobs[0];
+        p.jobId = job.id;
+        addLog(`Karrierestart: ${job.name} mit Jahresgehalt ${formatMoney(job.salary)}.`);
+      }
+
+      if (p.jobId) {
+        const job = Data_Library.jobs.find(j => j.id === p.jobId);
+        const inflationFactor = 1 + gameState.inflation;
+        const gross = job.salary * inflationFactor;
+        const taxes = gross * gameState.taxRate;
+        p.balance += (gross - taxes);
+        p.happiness = clamp(p.happiness - job.stress * 0.35 + rand(-2, 3), 0, 100);
+        p.socialStatus = clamp(p.socialStatus + job.prestige * 0.18, 1, 100);
+      }
+    }
+
+    function processFinanceAndInvestments() {
+      const p = gameState.player;
+      // Lebenshaltung
+      const baseCost = 3500 + p.age * 50 + gameState.inflation * 12000;
+      p.balance -= baseCost;
+
+      // Kreditzinsen
+      if (p.debt > 0) {
+        const interest = p.debt * (0.04 + gameState.inflation * 0.4);
+        p.debt += interest;
+        p.balance -= Math.min(p.balance * 0.18, p.debt * 0.06);
+      }
+
+      // Portfolio-Bewertung
+      const portfolioValue = Object.entries(p.portfolio).reduce((sum, [assetId, units]) => {
+        const marketAsset = gameState.market.find(m => m.id === assetId);
+        return sum + units * (marketAsset?.value || 0);
+      }, 0);
+      p.balance += portfolioValue * 0.01; // Dividenden/Rewards
+
+      // Insolvenzschutz
+      if (p.balance < -20000) {
+        p.debt += Math.abs(p.balance) * 1.2;
+        p.balance = -5000;
+        addLog('Du meldest private Insolvenz an. Kreditwürdigkeit sinkt massiv.');
+      }
+    }
+
+    function processCrime() {
+      const p = gameState.player;
+      if (p.wantedLevel <= 0 && Math.random() < 0.12) return;
+
+      if (Math.random() < p.wantedLevel * 0.08) {
+        const jail = rand(1, Math.max(1, p.wantedLevel));
+        p.jailedYears += jail;
+        p.wantedLevel = clamp(p.wantedLevel - rand(1, 3), 0, 10);
+        p.happiness = clamp(p.happiness - 15, 0, 100);
+        p.socialStatus = clamp(p.socialStatus - 12, 1, 100);
+        addLog(`Du wurdest gefasst und musst ${jail} Jahre ins Gefängnis.`);
+      }
+    }
+
+    function processRelationships() {
+      const p = gameState.player;
+      if (!p.relationship && p.age >= 16 && Math.random() < 0.34) {
+        const partnerScore = clamp(Math.floor((p.looks + p.intelligence + p.socialStatus + p.happiness) / 4 + rand(-20, 20)), 1, 100);
+        if (partnerScore > 48) {
+          p.relationship = { name: `Partner_${rand(100, 999)}`, quality: clamp(partnerScore, 15, 100), married: false };
+          addLog(`Du lernst ${p.relationship.name} kennen. Die Chemie stimmt!`);
+        }
+      }
+
+      if (p.relationship) {
+        const relEvent = pick(Data_Library.relationshipEvents);
+        p.relationship.quality = clamp(p.relationship.quality + rand(-9, 8), 0, 100);
+        addLog(relEvent);
+
+        if (!p.relationship.married && p.relationship.quality > 78 && p.age > 22 && Math.random() < 0.2) {
+          p.relationship.married = true;
+          p.socialStatus = clamp(p.socialStatus + 8, 1, 100);
+          addLog(`💍 Hochzeit mit ${p.relationship.name}!`);
+          broadcastWorldEvent(`${gameState.player.username} hat geheiratet.`);
+        }
+
+        if (p.relationship.quality < 18) {
+          addLog(`Trennung von ${p.relationship.name}.`);
+          p.relationship = null;
+          p.happiness = clamp(p.happiness - 10, 0, 100);
+        }
+      }
+
+      if (p.relationship?.married && Math.random() < 0.12) {
+        p.children += 1;
+        p.happiness = clamp(p.happiness + 8, 0, 100);
+        addLog(`👶 Familienzuwachs! Ihr habt jetzt ${p.children} Kind(er).`);
+      }
+    }
+
+    async function processRentTick() {
+      for (const home of gameState.housingMarket) {
+        if (!home.tenantId) continue;
+        const rentDue = Math.round(home.rent * (1 + gameState.inflation));
+        if (home.ownerId && home.ownerId !== 'ai_bank') {
+          await transferFundsAtomic(home.tenantId, home.ownerId, rentDue, 'rent_payment');
+        } else {
+          const tenant = gameState.profiles.find(p => p.id === home.tenantId) || (gameState.player.id === home.tenantId ? gameState.player : null);
+          if (tenant) tenant.balance -= rentDue;
+        }
+        gameState.worldTickerItems.unshift(`${home.title}: Miete ${formatMoney(rentDue)} in ${home.city}`);
+      }
+      if (gameState.worldTickerItems.length > 20) gameState.worldTickerItems.length = 20;
+    }
+
+    function buyProperty(propertyId) {
+      const p = gameState.player;
+      const prop = gameState.housingMarket.find(x => x.id === propertyId);
+      if (!prop || prop.ownerId) return addLog('Immobilie nicht verfügbar.');
+      if (p.balance < prop.price) return addLog('Nicht genug Kapital für Immobilienkauf.');
+      p.balance -= prop.price;
+      prop.ownerId = p.id;
+      addLog(`Du hast ${prop.title} in ${prop.city} gekauft.`);
+      gameState.worldTickerItems.unshift(`${p.username} kaufte ${prop.title} (${formatMoney(prop.price)})`);
+      render();
+    }
+
+    function rentProperty(propertyId) {
+      const p = gameState.player;
+      const prop = gameState.housingMarket.find(x => x.id === propertyId);
+      if (!prop || prop.tenantId) return addLog('Immobilie nicht verfügbar für Miete.');
+      prop.tenantId = p.id;
+      p.location = prop.city;
+      p.livingMode = 'Miete';
+      addLog(`Du ziehst in ${prop.title} ein und zahlst ${formatMoney(prop.rent)} Miete.`);
+      render();
+    }
+
+    function maintainProperty(propertyId) {
+      const p = gameState.player;
+      const prop = gameState.housingMarket.find(x => x.id === propertyId && x.ownerId === p.id);
+      if (!prop) return;
+      const cost = Math.round(prop.price * 0.01);
+      if (p.balance < cost) return addLog('Nicht genug Geld für Instandhaltung.');
+      p.balance -= cost;
+      prop.condition = clamp(prop.condition + rand(6, 14), 0, 100);
+      addLog(`Instandhaltung durchgeführt (${formatMoney(cost)}). Zustand jetzt ${prop.condition}.`);
+      render();
+    }
+
+    async function broadcastWorldEvent(text) {
+      addLog(text, 'world');
+      await persistWorldEvent(text, 'player_action');
+    }
+
+    async function ageUpOneYear() {
+      const p = gameState.player;
+      gameState.year += 1;
+      gameState.currentYear += 1;
+      p.age += 1;
+
+      if (p.jailedYears > 0) {
+        p.jailedYears -= 1;
+        p.happiness = clamp(p.happiness - 4, 0, 100);
+        addLog('Du verbringst ein weiteres Jahr im Gefängnis.');
+      } else {
+        processLifeStageEvent();
+        processCareer();
+        processRelationships();
+      }
+
+      applyEconomyTick();
+      processFinanceAndInvestments();
+      processCrime();
+      recalcDerivedStats();
+
+      // Altersbedingte Veränderungen mit vielen Variablen
+      p.health = clamp(p.health - (p.age > 45 ? rand(1, 4) : rand(0, 2)), 0, 100);
+      p.intelligence = clamp(p.intelligence + (p.age < 30 ? rand(0, 2) : rand(-1, 1)), 20, 100);
+      p.looks = clamp(p.looks + (p.age < 28 ? rand(0, 1) : rand(-2, 0)), 10, 100);
+      p.fame = clamp(p.fame + rand(-2, 3) + Math.floor(p.socialStatus / 35), 0, 100);
+
+      if (Math.random() < 0.05) {
+        const randomDisease = pick(Data_Library.diseases);
+        p.diseases.push(randomDisease.id);
+        p.health = clamp(p.health - randomDisease.severity * 1.7, 0, 100);
+        addLog(`Gesundheitseinschnitt: ${randomDisease.name} diagnostiziert.`);
+      }
+
+      if (p.health <= 0 || p.age > 110) {
+        addLog('☠️ Dein Charakter ist verstorben. Neustart wird initiiert.');
+        await broadcastWorldEvent(`${p.username} ist im Alter von ${p.age} verstorben.`);
+        gameState.player = createInitialPlayer();
+      }
+
+      if (Math.random() < 0.22) {
+        const worldEvent = pick(Data_Library.eventTexts);
+        await broadcastWorldEvent(worldEvent);
+      }
+
+      await processRentTick();
+      await syncProfile();
+      render();
+    }
+
+    async function doWork() {
+      const p = gameState.player;
+      if (!p.jobId) {
+        addLog('Du hast noch keinen Job. Altern oder Ausbildung verbessern!');
+        return;
+      }
+      const job = Data_Library.jobs.find(j => j.id === p.jobId);
+      const bonus = rand(200, 2000) + Math.floor(p.intelligence * 8);
+      p.balance += bonus;
+      p.happiness = clamp(p.happiness - 2, 0, 100);
+      p.socialStatus = clamp(p.socialStatus + 1, 1, 100);
+      addLog(`Nebenprojekt im Job (${job.name}) bringt dir ${formatMoney(bonus)} ein.`);
+      await broadcastWorldEvent(`${p.username} hat einen lukrativen Deal abgeschlossen.`);
+      await syncProfile();
+      render();
+    }
+
+    async function doStudy() {
+      const p = gameState.player;
+      const cost = rand(300, 1800);
+      p.balance -= cost;
+      p.educationLevel = clamp(p.educationLevel + rand(1, 3), 0, 25);
+      p.intelligence = clamp(p.intelligence + rand(1, 4), 20, 100);
+      p.happiness = clamp(p.happiness + rand(-1, 4), 0, 100);
+      addLog(`Du investierst ${formatMoney(cost)} in Bildung. Bildungslevel: ${p.educationLevel}.`);
+      await syncProfile();
+      render();
+    }
+
+    async function doInvest() {
+      const p = gameState.player;
+      const asset = pick(gameState.market);
+      const mechanic = pick(Data_Library.investmentMechanics || []);
+      const opportunity = pick(Data_Library.investmentOpportunities || []);
+      const amount = rand(100, 1800);
+      if (p.balance < amount) {
+        addLog('Nicht genug Kapital zum Investieren.');
+        return;
+      }
+      const strategyFactor = mechanic ? clamp(1 + mechanic.expectedReturn - mechanic.risk * 0.35, 0.72, 1.65) : 1;
+      const units = (amount / asset.value) * strategyFactor;
+      p.portfolio[asset.id] += units;
+      p.balance -= amount;
+      if (mechanic && opportunity) addLog(`Investitionsmechanik: ${mechanic.name} | Ziel: ${opportunity}.`);
+      addLog(`Du kaufst ${units.toFixed(2)} Anteile von ${asset.name} für ${formatMoney(amount)}.`);
+      await broadcastWorldEvent(`${p.username} investiert über ${mechanic?.id || 'basis'} in ${asset.name}.`);
+      await syncProfile();
+      render();
+    }
+
+    async function doCrime() {
+      const p = gameState.player;
+      const crime = pick(Data_Library.crimes);
+      const reward = rand(crime.reward[0], crime.reward[1]);
+      const caught = Math.random() < crime.risk;
+
+      if (caught) {
+        p.wantedLevel = clamp(p.wantedLevel + rand(1, 3), 0, 10);
+        p.socialStatus = clamp(p.socialStatus - rand(2, 9), 1, 100);
+        p.happiness = clamp(p.happiness - rand(3, 12), 0, 100);
+        addLog(`Fehlgeschlagen: ${crime.text}. Dein Fahndungslevel steigt auf ${p.wantedLevel}.`);
+        await broadcastWorldEvent(`${p.username} wurde bei "${crime.text}" erwischt.`);
+      } else {
+        p.balance += reward;
+        p.wantedLevel = clamp(p.wantedLevel + 1, 0, 10);
+        p.fame = clamp(p.fame + rand(1, 4), 0, 100);
+        addLog(`Erfolg: ${crime.text}. Beute: ${formatMoney(reward)}.`);
+        await broadcastWorldEvent(`${p.username} hat erfolgreich "${crime.text}" durchgeführt.`);
+      }
+
+      if (Math.random() < 0.16) {
+        p.debt += rand(4000, 20000);
+        addLog('Eine Bande erpresst dich. Neue Schulden wurden erzwungen.');
+      }
+
+      await syncProfile();
+      render();
+    }
+
+    function simulateWorldTick() {
+      const bot = pick(gameState.profiles.filter(p => p.id.startsWith('bot_')));
+      if (!bot) return;
+      const actions = [
+        `${bot.username} wurde gerade zum Präsidenten gewählt.`,
+        `${bot.username} hat eine Bank ausgeraubt.`,
+        `${bot.username} startete eine KI-Firma und wurde reich.`,
+        `${bot.username} scheiterte an einem Krypto-Scam.`,
+        `${bot.username} heiratete in ${bot.location}.`,
+        `${bot.username} manipuliert den Schwarzmarkt.`
+      ];
+      gameState.worldFeed.unshift(`[SIM] ${pick(actions)}`);
+      gameState.market.forEach(a => a.value = clamp(a.value + (Math.random() - 0.5) * 4, 30, 430));
+      render();
+    }
+
+    async function loadPlayers() {
+      if (!supabase) {
+        if (!gameState.profiles.length) {
+          gameState.player.livingMode = gameState.player.livingMode || "Bei Eltern";
+      gameState.housingMarket = createHousingMarket();
+      gameState.profiles = [gameState.player, ...generateBotProfiles()];
+        }
+        renderPlayers(gameState.profiles);
+        return;
+      }
+      const { data } = await supabase.from('profiles').select('*').limit(100);
+      gameState.profiles = (data || []).map(d => ({ ...d.stats_json, id: d.id, username: d.username, location: d.location, balance: d.balance, socialStatus: d.social_status }));
+      renderPlayers(gameState.profiles);
+    }
+
+    async function interactWithPlayer(target, type) {
+      const p = gameState.player;
+      let result = '';
+      if (type === 'Handeln') {
+        const amount = rand(250, 6000);
+        p.balance += amount;
+        result = `Handel mit ${target.username} erfolgreich. Gewinn: ${formatMoney(amount)}.`;
+      }
+      if (type === 'Heiraten') {
+        if (p.relationship?.married) {
+          result = 'Du bist bereits verheiratet.';
+        } else {
+          p.relationship = { name: target.username, quality: rand(55, 95), married: true };
+          p.socialStatus = clamp(p.socialStatus + 10, 1, 100);
+          result = `Du hast ${target.username} geheiratet.`;
+        }
+      }
+      if (type === 'Beklauen') {
+        const chance = 0.45 + p.intelligence / 300;
+        if (Math.random() < chance) {
+          const loot = rand(500, 12000);
+          p.balance += loot;
+          p.wantedLevel = clamp(p.wantedLevel + 2, 0, 10);
+          result = `Du hast ${target.username} um ${formatMoney(loot)} erleichtert.`;
+        } else {
+          p.wantedLevel = clamp(p.wantedLevel + 3, 0, 10);
+          result = `Beklauen gescheitert. Fahndungslevel nun ${p.wantedLevel}.`;
+        }
+      }
+      if (type === 'Kooperieren') {
+        const iqBoost = rand(1, 3);
+        p.intelligence = clamp(p.intelligence + iqBoost, 20, 100);
+        p.fame = clamp(p.fame + 2, 0, 100);
+        result = `Kooperation mit ${target.username} verbessert deinen Einfluss.`;
+      }
+
+      addLog(result);
+      await broadcastWorldEvent(`${p.username} interagierte mit ${target.username}: ${type}.`);
+
+      if (supabase) {
+        await supabase.from('interactions').insert({
+          from_player: p.id,
+          to_player: target.id,
+          action_type: type,
+          result,
+          payload_json: { year: gameState.currentYear }
+        });
+      }
+
+      await syncProfile();
+      render();
+    }
+
+    function renderDashboard() {
+      const p = gameState.player;
+      const stats = [
+        ['Alter', p.age],
+        ['Gesundheit', p.health.toFixed(1)],
+        ['Glück', p.happiness.toFixed(1)],
+        ['Intelligenz', p.intelligence.toFixed(1)],
+        ['Aussehen', p.looks.toFixed(1)],
+        ['Kontostand', formatMoney(p.balance)],
+        ['Sozialstatus', p.socialStatus.toFixed(1)],
+        ['Standort', p.location],
+      ];
+
+      document.getElementById('dashboardStats').innerHTML = stats.map(([k, v]) => `
+        <div class="rounded-lg bg-slate-900/80 border border-slate-700 px-2 py-2">
+          <div class="text-[10px] uppercase tracking-wide text-slate-400">${k}</div>
+          <div class="font-semibold text-cyan-300 text-sm sm:text-base">${v}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderTabs() {
+      document.getElementById('tabs').innerHTML = tabs.map(tab => `
+        <button data-tab="${tab}" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap font-semibold ${gameState.activeTab === tab ? 'tab-active' : 'bg-slate-800 hover:bg-slate-700'}">${tab}</button>
+      `).join('');
+    }
+
+    function tabContent() {
+      const p = gameState.player;
+      const currentJob = Data_Library.jobs.find(j => j.id === p.jobId);
+      const topDiseases = p.diseases.slice(0, 5).join(', ') || 'Keine';
+
+      const mapping = {
+        'Leben': `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div class="rounded-lg border border-slate-700 bg-slate-900 p-3">
+              <h3 class="font-bold mb-1">Identität</h3>
+              <p>Nutzername: <span class="text-cyan-300">${p.username}</span></p>
+              <p>Geburtsland: <span class="text-cyan-300">${p.country}</span></p>
+              <p>Elternkapital: <span class="text-cyan-300">${formatMoney(p.parentCapital)}</span></p>
+              <p>Erkrankungen: <span class="text-cyan-300">${topDiseases}</span></p>
+            </div>
+            <div class="rounded-lg border border-slate-700 bg-slate-900 p-3">
+              <h3 class="font-bold mb-1">Lebensphase</h3>
+              <p>Phase: <span class="text-cyan-300">${stageFromAge(p.age)}</span></p>
+              <p>Kinder: <span class="text-cyan-300">${p.children}</span></p>
+              <p>Gefängnisjahre offen: <span class="text-cyan-300">${p.jailedYears}</span></p>
+              <p>Fahndungslevel: <span class="text-cyan-300">${p.wantedLevel}</span></p>
+            </div>
+          </div>
+        `,
+        'Bildung': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Bildungslevel: <span class="text-cyan-300 font-semibold">${p.educationLevel}</span></p>
+            <p>Intelligenz-Skalierung beeinflusst Karrierezugänge (220 Job-IDs verfügbar).</p>
+            <p>Nutze „Lernen“, um Zugang zu Elite-Karrieren zu erhalten.</p>
+          </div>
+        `,
+        'Karriere': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Aktueller Job: <span class="text-cyan-300">${currentJob ? currentJob.name : 'Kein Job'}</span></p>
+            <p>Prestige: <span class="text-cyan-300">${currentJob ? currentJob.prestige : 0}</span></p>
+            <p>Jahresgehalt: <span class="text-cyan-300">${currentJob ? formatMoney(currentJob.salary) : '-'}</span></p>
+            <p>Fame: <span class="text-cyan-300">${p.fame}</span></p>
+          </div>
+        `,
+        'Finanzen': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Kontostand: <span class="text-cyan-300">${formatMoney(p.balance)}</span></p>
+            <p>Schulden: <span class="text-cyan-300">${formatMoney(p.debt)}</span></p>
+            <p>Inflation: <span class="text-cyan-300">${(gameState.inflation * 100).toFixed(2)}%</span></p>
+            <p>Steuersatz: <span class="text-cyan-300">${(gameState.taxRate * 100).toFixed(2)}%</span></p>
+          </div>
+        `,
+        'Immobilien': `
+          <div class="space-y-2 text-sm">
+            <p>Wohnmodus: <span class="text-cyan-300">${p.livingMode || 'Bei Eltern'}</span></p>
+            <div class="grid md:grid-cols-2 gap-2">${gameState.housingMarket.slice(0,6).map(h => `<div class='rounded border border-slate-700 p-2 bg-slate-900'><div class='font-semibold'>${h.title} (${h.city})</div><div>Zustand <span class='${h.condition>70?'text-emerald-300':'text-rose-300'}'>${h.condition}%</span></div><div>Miete ${formatMoney(h.rent)} • Kauf ${formatMoney(h.price)}</div><div class='mt-1 flex gap-1'><button onclick="rentProperty('${h.id}')" class='px-2 py-1 bg-cyan-700 rounded text-xs'>Mieten</button><button onclick="buyProperty('${h.id}')" class='px-2 py-1 bg-emerald-700 rounded text-xs'>Kaufen</button><button onclick="maintainProperty('${h.id}')" class='px-2 py-1 bg-amber-700 rounded text-xs'>Warten</button></div></div>`).join('')}</div>
+          </div>
+        `,
+        'Börse': `
+          <div class="space-y-2 text-sm">
+            <p>Global Exchange Shock: <span class="text-cyan-300">${gameState.lastMarketShock}</span></p>
+            ${gameState.market.map(a => { const delta=((a.history.at(-1)-a.history[0])/a.history[0])*100; const bar=Math.min(100,Math.max(5,Math.abs(delta)*4)); return `<div class='rounded border border-slate-700 p-2 bg-slate-900'><div class='flex justify-between'><span>${a.name}</span><span class='${delta>=0?'text-emerald-300':'text-rose-300'}'>${a.value.toFixed(2)} (${delta.toFixed(1)}%)</span></div><div class='h-2 mt-1 bg-slate-800 rounded'><div class='h-2 rounded ${delta>=0?'bg-emerald-500':'bg-rose-500'}' style='width:${bar}%'></div></div></div>`; }).join('')}
+            <p class='text-slate-400'>High Netzwerk-Status kann Insider-Tipps auslösen.</p>
+          </div>
+        `,
+        'Beziehungen': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Status: <span class="text-cyan-300">${p.relationship ? (p.relationship.married ? 'Verheiratet' : 'In Beziehung') : 'Single'}</span></p>
+            <p>Partner: <span class="text-cyan-300">${p.relationship?.name || '-'}</span></p>
+            <p>Qualität: <span class="text-cyan-300">${p.relationship?.quality ?? '-'}</span></p>
+            <p>Familiendynamik skaliert Glück, Sozialstatus und Kosten.</p>
+          </div>
+        `,
+        'Kriminalität': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Fahndungslevel: <span class="text-cyan-300">${p.wantedLevel}</span></p>
+            <p>Offene Haftjahre: <span class="text-cyan-300">${p.jailedYears}</span></p>
+            <p>Mafia-Risiko steigt bei häufigen Delikten & hoher Inflation.</p>
+            <p>Aktionen: Taschendiebstahl, Cyber-Heist, Bankraub, Schmuggel, Steuerbetrug.</p>
+          </div>
+        `,
+        'Welt-Hub': `
+          <div class="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm space-y-2">
+            <p>Realtime-Feeds aus <code>world_events</code>, Profile aus <code>profiles</code>, direkte Interaktionen in <code>interactions</code>.</p>
+            <p>Ökonomie reagiert auf globales Verhalten aller aktiven Spieler.</p>
+            <p>Suche Spieler und interagiere mit Handeln/Heiraten/Beklauen/Kooperieren.</p>
+          </div>
+        `,
+      };
+      return mapping[gameState.activeTab];
+    }
+
+    function renderLog() {
+      document.getElementById('lifeLog').innerHTML = gameState.player.log.map(item => `
+        <div class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5">${item}</div>
+      `).join('');
+    }
+
+    function renderWorldFeed() {
+      document.getElementById('worldFeed').innerHTML = gameState.worldFeed.map(item => `
+        <div class="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5">${item}</div>
+      `).join('');
+    }
+
+    function renderMarket() {
+      document.getElementById('marketView').innerHTML = gameState.market.map(a => {
+        const tone = a.value >= 100 ? 'text-emerald-300' : 'text-rose-300';
+        return `<div class="flex items-center justify-between border border-slate-700 rounded-lg px-2 py-1 bg-slate-900"><span>${a.name}</span><span class="${tone}">${a.value.toFixed(2)}</span></div>`;
+      }).join('');
+    }
+
+    function renderPlayers(list) {
+      const container = document.getElementById('playerList');
+      const filtered = list.filter(p => p.id !== gameState.player.id);
+      container.innerHTML = filtered.slice(0, 50).map(p => `
+        <div class="rounded-lg border border-slate-700 bg-slate-900 p-2">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <div class="font-semibold text-cyan-300">${p.username}</div>
+              <div class="text-xs text-slate-400">${p.location || 'Unbekannt'} • Status ${Math.round(p.socialStatus || 0)}</div>
+            </div>
+            <div class="grid grid-cols-2 gap-1">
+              ${['Handeln', 'Heiraten', 'Beklauen', 'Kooperieren'].map(action => `<button data-player="${p.id}" data-i-action="${action}" class="interaction-btn text-[10px] px-1.5 py-1 rounded bg-slate-700 hover:bg-slate-600">${action}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderTabContent() {
+      document.getElementById('tabContent').innerHTML = tabContent();
+    }
+
+    function renderWorldTicker() {
+      const text = gameState.worldTickerItems.slice(0, 8).join('  •  ') || 'Live-Ticker: Immobilien- und Börsenaktivität läuft...';
+      const el = document.getElementById('worldTicker');
+      if (el) el.textContent = text;
+    }
+
+    function render() {
+      renderDashboard();
+      renderTabs();
+      renderTabContent();
+      renderLog();
+      renderWorldFeed();
+      renderMarket();
+      renderWorldTicker();
+      renderPlayers(gameState.profiles);
+    }
+
+    function bindEvents() {
+      document.getElementById('quickActions').addEventListener('click', async (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        if (action === 'ageUp') await ageUpOneYear();
+        if (action === 'work') await doWork();
+        if (action === 'study') await doStudy();
+        if (action === 'invest') await doInvest();
+        if (action === 'crime') await doCrime();
+      });
+
+      document.getElementById('tabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-tab]');
+        if (!btn) return;
+        gameState.activeTab = btn.dataset.tab;
+        render();
+      });
+
+      document.getElementById('playerList').addEventListener('click', async (e) => {
+        const btn = e.target.closest('.interaction-btn');
+        if (!btn) return;
+        const target = gameState.profiles.find(p => p.id === btn.dataset.player);
+        if (!target) return;
+        await interactWithPlayer(target, btn.dataset.iAction);
+      });
+
+      document.getElementById('searchBtn').addEventListener('click', () => {
+        const query = document.getElementById('playerSearch').value.trim().toLowerCase();
+        if (!query) return renderPlayers(gameState.profiles);
+        const result = gameState.profiles.filter(p => (p.username || '').toLowerCase().includes(query));
+        renderPlayers(result.length ? result : [{ id: 'none', username: 'Kein Spieler gefunden', location: '-', socialStatus: 0 }]);
+      });
+    }
+
+    async function bootstrap() {
+      gameState.player = createInitialPlayer();
+      gameState.player.livingMode = gameState.player.livingMode || "Bei Eltern";
+      gameState.housingMarket = createHousingMarket();
+      gameState.profiles = [gameState.player, ...generateBotProfiles()];
+      gameState.worldFeed = [
+        '[SYSTEM] Willkommen in der persistenten Multiplayer-Welt.',
+        '[SYSTEM] Weltwirtschaft und NPC-Aktionen wurden initialisiert.'
+      ];
+
+      render();
+      bindEvents();
+      initRealtimeSubscriptions();
+      await loadPlayers();
+      await syncProfile();
+    }
+
+    window.buyProperty = buyProperty;
+    window.rentProperty = rentProperty;
+    window.maintainProperty = maintainProperty;
+    bootstrap();
+  </script>
+</body>
+</html>
